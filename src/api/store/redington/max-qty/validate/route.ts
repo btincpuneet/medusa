@@ -1,6 +1,10 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-import { collectAllowedGuestDomains } from "../../../../../modules/redington-guest-user"
+import {
+  type MaxQtyValidateItem,
+  type MaxQtyValidationResult,
+  validateItemsAgainstMaxQty,
+} from "../../../../../modules/redington-max-qty"
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -16,7 +20,7 @@ const setCors = (req: MedusaRequest, res: MedusaResponse) => {
     req.headers["access-control-request-headers"] ||
       "Content-Type, Authorization"
   )
-  res.header("Access-Control-Allow-Methods", "GET,OPTIONS")
+  res.header("Access-Control-Allow-Methods", "POST,OPTIONS")
   res.header("Access-Control-Allow-Credentials", "true")
 }
 
@@ -25,23 +29,32 @@ export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
   res.status(204).send()
 }
 
-export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
+export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
-  try {
-    const summary = await collectAllowedGuestDomains()
-    res.json({
-      allowed_domains: summary.allowed,
-      config_domains: summary.config,
-      database_domains: summary.database,
-      domain_extensions: summary.extensions,
+  const body = (req.body || {}) as { items?: MaxQtyValidateItem[] }
+  if (!Array.isArray(body.items) || !body.items.length) {
+    return res.status(400).json({
+      valid: false,
+      violations: [],
+      message: "items array is required",
     })
+  }
+
+  try {
+    const result: MaxQtyValidationResult = await validateItemsAgainstMaxQty(
+      body.items
+    )
+    res.json(result)
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
-        : "Unable to load allowed domains."
-    res.status(500).json({ message })
+        : "Failed to validate max quantity rules."
+    res.status(500).json({
+      valid: false,
+      violations: [],
+      message,
+    })
   }
 }
-

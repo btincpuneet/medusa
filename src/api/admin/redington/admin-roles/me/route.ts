@@ -2,10 +2,47 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { fetchAdminUserById } from "../../../../../lib/admin-users"
 import {
+  assignRoleToUser,
+  createAdminRole,
+  findAdminRoleByKey,
   listRoleAssignments,
   type AdminRoleAssignmentRow,
   type AdminRoleRow,
 } from "../../../../../lib/pg"
+
+const ensureSuperAdminForUser = async (
+  userId: string
+): Promise<AdminRoleAssignmentRow[]> => {
+  let role = await findAdminRoleByKey("super_admin")
+
+  if (!role) {
+    role = await createAdminRole({
+      role_name: "Super Admin",
+      description: "Default role with full access to Redington admin tools.",
+      permissions: ["*"],
+      can_login: true,
+      domains: [],
+    })
+  }
+
+  const assignments = await listRoleAssignments({ user_id: userId })
+  const hasAssignment = assignments.some(
+    (assignment) =>
+      assignment.role?.role_key === "super_admin" &&
+      (assignment.domain_id === null || assignment.domain_id === undefined)
+  )
+
+  if (!hasAssignment) {
+    await assignRoleToUser({
+      user_id: userId,
+      role_id: role.id,
+      domain_id: null,
+    })
+    return listRoleAssignments({ user_id: userId })
+  }
+
+  return assignments
+}
 
 const aggregatePermissions = (roles: AdminRoleRow[]): string[] => {
   const set = new Set<string>()
@@ -43,7 +80,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
-    const assignments = await listRoleAssignments({ user_id: userId })
+    const assignments = await ensureSuperAdminForUser(userId)
 
     const roleMap = new Map<number, AdminRoleRow>()
     for (const assignment of assignments) {

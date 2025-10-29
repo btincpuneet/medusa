@@ -1,6 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-import { collectAllowedGuestDomains } from "../../../../../modules/redington-guest-user"
+import { listActiveBannerSliders } from "../../../../lib/pg"
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -28,20 +28,6 @@ export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
-  try {
-    const summary = await collectAllowedGuestDomains()
-    res.json({
-      allowed_domains: summary.allowed,
-      config_domains: summary.config,
-      database_domains: summary.database,
-      domain_extensions: summary.extensions,
-    })
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to load allowed domains."
-    res.status(500).json({ message })
-  }
+  const sliders = await listActiveBannerSliders()
+  return res.json(sliders)
 }
-
