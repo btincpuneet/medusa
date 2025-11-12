@@ -2,6 +2,12 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import type { AwilixContainer } from "awilix"
 
+import {
+  createCustomerRecord,
+  deleteCustomerIfExists,
+  ensureEmailPasswordIdentity,
+} from "../../../../lib/customer-auth"
+
 type MagentoCustomAttribute = {
   attribute_code: string
   value: unknown
@@ -60,14 +66,13 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const lastName = payload.lastname || payload.last_name || ""
 
   const scope: AwilixContainer = req.scope
-  const customerService = scope.resolve("customerService")
-
   const customAttributesMap = mapCustomAttributes(payload.custom_attributes)
 
+  let customer: any
+
   try {
-    const customer = await customerService.create({
+    customer = await createCustomerRecord(scope, {
       email,
-      password,
       first_name: firstName,
       last_name: lastName,
       metadata: {
@@ -80,33 +85,6 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
         },
       },
     })
-
-    const response = {
-      id: customer.id,
-      group_id: payload.group_id ?? 0,
-      default_billing: payload.default_billing ?? "0",
-      default_shipping: payload.default_shipping ?? "0",
-      confirmation: null,
-      created_at: customer.created_at?.toISOString?.() ?? new Date().toISOString(),
-      updated_at: customer.updated_at?.toISOString?.() ?? new Date().toISOString(),
-      created_in: "Medusa",
-      dob: null,
-      email: customer.email,
-      firstname: customer.first_name ?? firstName,
-      lastname: customer.last_name ?? lastName,
-      middlename: payload.middlename ?? null,
-      prefix: payload.prefix ?? null,
-      suffix: payload.suffix ?? null,
-      gender: payload.gender ?? 0,
-      store_id: payload.store_id ?? 1,
-      website_id: payload.website_id ?? 1,
-      addresses: payload.addresses ?? [],
-      disable_auto_group_change: payload.disable_auto_group_change ?? 0,
-      extension_attributes: payload.extension_attributes ?? {},
-      custom_attributes: payload.custom_attributes ?? [],
-    }
-
-    return res.status(200).json(response)
   } catch (error: any) {
     if (
       error instanceof MedusaError &&
@@ -122,4 +100,45 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
         error?.message ?? "Unexpected error while creating the customer.",
     })
   }
+
+  try {
+    await ensureEmailPasswordIdentity(scope, email, password, customer.id)
+  } catch (error: any) {
+    await deleteCustomerIfExists(scope, customer.id)
+    return res.status(500).json({
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unexpected error registering customer credentials.",
+    })
+  }
+
+  const response = {
+    id: customer.id,
+    group_id: payload.group_id ?? 0,
+    default_billing: payload.default_billing ?? "0",
+    default_shipping: payload.default_shipping ?? "0",
+    confirmation: null,
+    created_at:
+      customer.created_at?.toISOString?.() ?? new Date().toISOString(),
+    updated_at:
+      customer.updated_at?.toISOString?.() ?? new Date().toISOString(),
+    created_in: "Medusa",
+    dob: null,
+    email: customer.email,
+    firstname: customer.first_name ?? firstName,
+    lastname: customer.last_name ?? lastName,
+    middlename: payload.middlename ?? null,
+    prefix: payload.prefix ?? null,
+    suffix: payload.suffix ?? null,
+    gender: payload.gender ?? 0,
+    store_id: payload.store_id ?? 1,
+    website_id: payload.website_id ?? 1,
+    addresses: payload.addresses ?? [],
+    disable_auto_group_change: payload.disable_auto_group_change ?? 0,
+    extension_attributes: payload.extension_attributes ?? {},
+    custom_attributes: payload.custom_attributes ?? [],
+  }
+
+  return res.status(200).json(response)
 }

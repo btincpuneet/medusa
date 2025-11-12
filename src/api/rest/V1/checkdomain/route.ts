@@ -34,6 +34,61 @@ type CheckDomainRequest = {
   domain?: string
 }
 
+const parseBoolean = (value: any, fallback: boolean): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  if (typeof value === "number") {
+    return value !== 0
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false
+    }
+  }
+
+  return fallback
+}
+
+const DEFAULT_AUTH_TYPE = (() => {
+  const parsed = Number.parseInt(
+    process.env.REDINGTON_DEFAULT_AUTH_TYPE ?? "",
+    10
+  )
+  return parsed === 1 ? 1 : 2
+})()
+
+const DEFAULT_EMAIL_OTP = parseBoolean(
+  process.env.REDINGTON_DEFAULT_EMAIL_OTP ?? "true",
+  true
+)
+const DEFAULT_MOBILE_OTP = parseBoolean(
+  process.env.REDINGTON_DEFAULT_MOBILE_OTP ?? "false",
+  false
+)
+
+const buildBaseResponse = (overrides: Record<string, any>) => ({
+  success: true,
+  status: true,
+  auth_type: String(DEFAULT_AUTH_TYPE),
+  email_otp: DEFAULT_EMAIL_OTP,
+  mobile_otp: DEFAULT_MOBILE_OTP,
+  ...overrides,
+})
+
+const buildDomainNotFoundResponse = (message: string) =>
+  buildBaseResponse({
+    success: false,
+    status: false,
+    message,
+  })
+
 const extractDomain = (body: CheckDomainRequest): string | null => {
   if (body.domain) {
     const normalized = body.domain.trim().toLowerCase()
@@ -82,28 +137,29 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   )
 
   if (!rows[0]) {
-    return res.json({
-      success: false,
-      message: `Domain ${domain} is not registered.`,
-    })
+    return res.json(
+      buildDomainNotFoundResponse(`Domain ${domain} is not registered.`)
+    )
   }
 
   const record = rows[0]
 
   if (record.is_active === false) {
-    return res.json({
-      success: false,
-      message: `Domain ${domain} is currently disabled.`,
-    })
+    return res.json(
+      buildDomainNotFoundResponse(`Domain ${domain} is currently disabled.`)
+    )
   }
 
   const authType = record.auth_type ?? 2
 
-  return res.json({
-    success: true,
-    domain_name: record.domain_name,
-    auth_type: String(authType),
-    email_otp: Boolean(record.email_otp ?? true),
-    mobile_otp: Boolean(record.mobile_otp ?? false),
-  })
+  return res.json(
+    buildBaseResponse({
+      success: true,
+      message: `Domain ${domain} authentication policy loaded.`,
+      domain_name: record.domain_name,
+      auth_type: String(authType),
+      email_otp: Boolean(record.email_otp ?? true),
+      mobile_otp: Boolean(record.mobile_otp ?? false),
+    })
+  )
 }

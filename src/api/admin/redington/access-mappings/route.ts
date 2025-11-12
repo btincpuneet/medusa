@@ -11,6 +11,7 @@ import {
 type Nullable<T> = T | null | undefined
 
 type CreateAccessMappingBody = {
+  access_id?: string | number
   country_code?: string
   mobile_ext?: string
   company_code?: string
@@ -25,6 +26,13 @@ const normalizeCountryCode = (value: Nullable<string>) =>
 const normalizeMobileExt = (value: Nullable<string>) => (value ?? "").trim()
 
 const normalizeCompanyCode = (value: Nullable<string>) => (value ?? "").trim()
+
+const normalizeAccessId = (value: Nullable<string | number>) => {
+  if (value === null || value === undefined) {
+    return ""
+  }
+  return String(value).trim()
+}
 
 const normalizeBrands = (value: Nullable<string[] | string>): string[] => {
   if (!value) {
@@ -58,6 +66,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `
       SELECT
         am.id,
+        am.access_id,
         am.country_code,
         am.mobile_ext,
         am.company_code,
@@ -89,12 +98,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const body = (req.body || {}) as CreateAccessMappingBody
 
+  const accessId = normalizeAccessId(body.access_id)
   const countryCode = normalizeCountryCode(body.country_code)
   const mobileExt = normalizeMobileExt(body.mobile_ext)
   const companyCode = normalizeCompanyCode(body.company_code)
   const brandIds = normalizeBrands(body.brand_ids)
   const domainId = normalizeId(body.domain_id)
   const domainExtentionId = normalizeId(body.domain_extention_id)
+
+  if (!accessId) {
+    return res.status(400).json({ message: "access_id is required" })
+  }
 
   if (!countryCode) {
     return res.status(400).json({ message: "country_code is required" })
@@ -122,10 +136,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const { rows } = await getPgPool().query(
       `
         INSERT INTO redington_access_mapping
-          (country_code, mobile_ext, company_code, brand_ids, domain_id, domain_extention_id)
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+          (access_id, country_code, mobile_ext, company_code, brand_ids, domain_id, domain_extention_id)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
         RETURNING
           id,
+          access_id,
           country_code,
           mobile_ext,
           company_code,
@@ -135,7 +150,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
           created_at,
           updated_at
       `,
-      [countryCode, mobileExt, companyCode, brandIdsJson, domainId, domainExtentionId]
+      [accessId, countryCode, mobileExt, companyCode, brandIdsJson, domainId, domainExtentionId]
     )
 
     const created = rows[0]
@@ -144,6 +159,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       `
         SELECT
           am.id,
+          am.access_id,
           am.country_code,
           am.mobile_ext,
           am.company_code,

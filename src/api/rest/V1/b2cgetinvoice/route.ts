@@ -235,7 +235,12 @@ const resolveDomainId = async (
     return explicit
   }
 
-  const accessId = parseNumeric(body.access_id ?? null)
+  const rawAccessId = body.access_id ?? null
+  const accessId =
+    rawAccessId === null || rawAccessId === undefined
+      ? ""
+      : String(rawAccessId).trim()
+
   if (!accessId) {
     return null
   }
@@ -246,7 +251,7 @@ const resolveDomainId = async (
     `
       SELECT domain_id
       FROM redington_access_mapping
-      WHERE id = $1
+      WHERE access_id = $1
       LIMIT 1
     `,
     [accessId]

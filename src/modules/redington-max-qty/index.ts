@@ -2,6 +2,7 @@ import {
   ensureRedingtonMaxQtyCategoryTable,
   ensureRedingtonMaxQtyRuleTable,
   ensureRedingtonOrderQuantityTrackerTable,
+  findAccessMappingByAccessId,
   getPgPool,
   mapMaxQtyCategoryRow,
   mapMaxQtyRuleRow,
@@ -1128,4 +1129,129 @@ export const buildValidationItemFromPayload = (
       metadata?.domain_id ?? metadata?.domainId ?? metadata?.domain
     ) ?? undefined,
   }
+}
+
+const sumTrackedQuantityForBrand = async (
+  brandId: string,
+  customerId?: number | null
+) => {
+  await ensureRedingtonOrderQuantityTrackerTable()
+
+  const params: Array<string | number> = [brandId]
+  let whereClause = "brand_id = $1"
+
+  if (typeof customerId === "number" && Number.isFinite(customerId)) {
+    params.push(Math.trunc(customerId))
+    whereClause += ` AND customer_id = $${params.length}`
+  }
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT COALESCE(SUM(quantity), 0) AS qty
+      FROM redington_order_quantity_tracker
+      WHERE ${whereClause}
+    `,
+    params
+  )
+
+  return Number(rows[0]?.qty ?? 0)
+}
+
+const extractFirstCategoryId = (value?: string | null) => {
+  if (!value) {
+    return ""
+  }
+
+  return value
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)[0] || ""
+}
+
+export type MaxOrderQtySummaryInput = {
+  brand_id: string
+  access_id: string
+  customer_id?: string | number | null
+}
+
+export type MaxOrderQtySummaryRow = {
+  brand_id: string
+  category_id: string
+  allowed_qty: string
+  ordered_qty: string
+}
+
+export const getMaxOrderQtySummary = async (
+  input: MaxOrderQtySummaryInput
+): Promise<MaxOrderQtySummaryRow[]> => {
+  const brandId = normalizeString(input.brand_id)
+  const accessId = normalizeString(input.access_id)
+
+  if (!brandId) {
+    throw new Error("brand_id is required.")
+  }
+
+  if (!accessId) {
+    throw new Error("accessId is required.")
+  }
+
+  const accessMapping = await findAccessMappingByAccessId(accessId)
+  if (!accessMapping) {
+    throw new Error("Access mapping not found for the provided accessId.")
+  }
+
+  const companyCode = normalizeString(accessMapping.company_code ?? "")
+  const domainId =
+    typeof accessMapping.domain_id === "number"
+      ? accessMapping.domain_id
+      : null
+
+  let allowedQty: number | null = null
+  let categoryId = ""
+
+  const [rules] = await listMaxQtyRules(
+    {
+      brand_id: brandId,
+      company_code: companyCode,
+      domain_id: domainId,
+    },
+    { limit: 1, offset: 0 }
+  )
+
+  if (rules.length) {
+    allowedQty = rules[0].max_qty
+    categoryId = rules[0].category_id ?? ""
+  } else {
+    const [categoryRules] = await listMaxQtyCategories(
+      {
+        brand_id: brandId,
+        company_code: companyCode,
+        domain_id: domainId,
+      },
+      { limit: 1, offset: 0 }
+    )
+
+    if (categoryRules.length) {
+      allowedQty = categoryRules[0].max_qty
+      categoryId = extractFirstCategoryId(categoryRules[0].category_ids)
+    }
+  }
+
+  const customerIdNumeric = normalizeOptionalNumber(input.customer_id)
+  const orderedQty = await sumTrackedQuantityForBrand(
+    brandId,
+    customerIdNumeric
+  )
+
+  return [
+    {
+      brand_id: brandId,
+      category_id: categoryId,
+      allowed_qty:
+        allowedQty !== null && allowedQty !== undefined
+          ? String(allowedQty)
+          : "",
+      ordered_qty: orderedQty > 0 ? String(orderedQty) : "",
+    },
+  ]
 }

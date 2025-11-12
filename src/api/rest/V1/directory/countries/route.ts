@@ -1,6 +1,16 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
-import { listDirectoryCountriesWithRegions } from "../../../../../lib/pg"
+import { createMagentoB2CClient } from "../../../../magentoClient"
+
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL
+
+const ensureMagentoConfig = () => {
+  if (!MAGENTO_REST_BASE_URL) {
+    throw new Error(
+      "MAGENTO_REST_BASE_URL is required to proxy Magento directory endpoints."
+    )
+  }
+}
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -25,42 +35,38 @@ export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
   res.status(204).send()
 }
 
-const formatRegion = (region: {
-  region_id: number
-  country_id: string
-  code: string | null
-  name: string | null
-}) => ({
-  id: String(region.region_id),
-  code: region.code ?? String(region.region_id),
-  name: region.name ?? region.code ?? String(region.region_id),
-  country_id: region.country_id,
-})
-
-const formatCountry = (country: {
-  country_id: string
-  iso2_code: string | null
-  iso3_code: string | null
-  name: string | null
-  regions: Array<{
-    region_id: number
-    country_id: string
-    code: string | null
-    name: string | null
-  }>
-}) => ({
-  id: country.country_id,
-  two_letter_abbreviation: country.iso2_code ?? country.country_id,
-  three_letter_abbreviation: country.iso3_code ?? country.country_id,
-  full_name_locale: country.name ?? country.country_id,
-  full_name_english: country.name ?? country.country_id,
-  available_regions: country.regions.map(formatRegion),
-})
-
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
-  const countries = await listDirectoryCountriesWithRegions()
-  return res.json(countries.map(formatCountry))
-}
+  try {
+    ensureMagentoConfig()
+  } catch (error) {
+    return res.status(500).json({
+      message:
+        error instanceof Error
+          ? error.message
+          : "Magento configuration missing.",
+    })
+  }
 
+  const client = createMagentoB2CClient({
+    baseUrl: MAGENTO_REST_BASE_URL!,
+  })
+
+  try {
+    const response = await client.request({
+      url: "directory/countries",
+      method: "GET",
+      params: req.query,
+    })
+
+    return res.status(response.status).json(response.data)
+  } catch (error: any) {
+    const status = error?.response?.status ?? 502
+    const message =
+      error?.response?.data?.message ||
+      error?.message ||
+      "Failed to load country directory."
+    return res.status(status).json({ message })
+  }
+}

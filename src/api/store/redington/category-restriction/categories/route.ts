@@ -23,14 +23,13 @@ type CategoryRecord = {
   metadata: Record<string, unknown>
 }
 
-const parseNumeric = (value: unknown): number | undefined => {
+const parseAccessId = (value: unknown): string | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value
+    return String(value)
   }
 
   if (typeof value === "string" && value.trim().length) {
-    const parsed = Number.parseInt(value.trim(), 10)
-    return Number.isFinite(parsed) ? parsed : undefined
+    return value.trim()
   }
 
   return undefined
@@ -179,7 +178,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const body = (req.body || {}) as CategoryRequestBody
   const categoryType = normalizeCategoryType(body.category_type)
 
-  const accessId = parseNumeric(body.access_id)
+  const accessId = parseAccessId(body.access_id)
   if (!accessId) {
     return res.status(400).json({
       message: "access_id is required",
@@ -195,7 +194,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       FROM redington_access_mapping am
       LEFT JOIN redington_domain d ON d.id = am.domain_id
       LEFT JOIN redington_domain_extention de ON de.id = am.domain_extention_id
-      WHERE am.id = $1
+      WHERE am.access_id = $1
       LIMIT 1
     `,
     [accessId]

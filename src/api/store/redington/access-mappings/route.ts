@@ -31,6 +31,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const baseQuery = `
     SELECT
       am.id,
+      am.access_id,
       am.country_code,
       am.mobile_ext,
       am.company_code,
@@ -73,7 +74,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (countryCode === "ALL") {
     return res.json({
       domain_names: mapped.map((entry) => ({
-        access_id: entry.id,
+        access_id: entry.access_id ?? entry.id,
         domain_name: entry.domain_name,
         company_code: entry.company_code,
         domain_extention_name: entry.domain_extention_name,
@@ -90,7 +91,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     country_code: countryCode,
     mobile_extension: mobileExtension,
     domain_names: mapped.map((entry) => ({
-      access_id: entry.id,
+      access_id: entry.access_id ?? entry.id,
       domain_name: entry.domain_name,
       company_code: entry.company_code,
       domain_extention_name: entry.domain_extention_name,

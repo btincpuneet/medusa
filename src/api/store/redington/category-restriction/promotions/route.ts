@@ -11,13 +11,12 @@ type PromotionRequestBody = {
   access_id?: number | string
 }
 
-const parseNumeric = (value: unknown): number | undefined => {
+const parseAccessId = (value: unknown): string | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value
+    return String(value)
   }
   if (typeof value === "string" && value.trim().length) {
-    const parsed = Number.parseInt(value.trim(), 10)
-    return Number.isFinite(parsed) ? parsed : undefined
+    return value.trim()
   }
   return undefined
 }
@@ -118,7 +117,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   await ensureRedingtonSettingsTable()
 
   const body = (req.body || {}) as PromotionRequestBody
-  const accessId = parseNumeric(body.access_id)
+  const accessId = parseAccessId(body.access_id)
   if (!accessId) {
     return res.status(400).json({
       message: "access_id is required",
@@ -129,7 +128,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     `
       SELECT id
       FROM redington_access_mapping
-      WHERE id = $1
+      WHERE access_id = $1
       LIMIT 1
     `,
     [accessId]

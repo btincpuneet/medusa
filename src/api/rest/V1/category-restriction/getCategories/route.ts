@@ -114,3 +114,5 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(500).json({ message })
   }
 }
+
+export const GET = POST

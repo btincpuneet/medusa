@@ -31,7 +31,9 @@ export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
 
 type RetryTimeBody = {
   access_id?: string
+  accessId?: string
   company_code?: string
+  companyCode?: string
 }
 
 const DEFAULT_RETRY_TIME = "02:00:00"
@@ -48,8 +50,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
   const body = (req.body || {}) as RetryTimeBody
-  const accessId = normalizeString(body.access_id)
-  const companyCode = normalizeString(body.company_code)
+  const accessId = normalizeString(body.access_id ?? body.accessId ?? null)
+  const companyCode = normalizeString(body.company_code ?? body.companyCode ?? null)
 
   await ensureRedingtonRetainCartConfigTable()
 

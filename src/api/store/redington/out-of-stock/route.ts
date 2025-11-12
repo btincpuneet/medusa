@@ -31,6 +31,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `
       SELECT
         id,
+        access_id,
         domain_id,
         company_code,
         country_code
@@ -38,11 +39,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     `
   )
 
-  const accessByDomain = new Map<number, Array<{
-    access_id: number
-    company_code: string | null
-    country_code: string | null
-  }>>()
+  const accessByDomain = new Map<
+    number,
+    Array<{
+      access_id: string | null
+      company_code: string | null
+      country_code: string | null
+    }>
+  >()
 
   for (const row of accessRows) {
     const domainId = Number(row.domain_id)
@@ -55,7 +59,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       accessByDomain.set(domainId, []).get(domainId)!
 
     list.push({
-      access_id: Number(row.id),
+      access_id:
+        typeof row.access_id === "string" && row.access_id.length
+          ? row.access_id
+          : Number.isFinite(Number(row.id))
+          ? String(row.id)
+          : null,
       company_code:
         typeof row.company_code === "string" ? row.company_code : null,
       country_code:

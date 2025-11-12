@@ -27,6 +27,13 @@ const normalizeBrands = (value: Nullable<string[] | string>): string[] => {
 
 const normalizeString = (value: Nullable<string>) => (value ?? "").trim()
 
+const normalizeAccessId = (value: Nullable<string | number>) => {
+  if (value === null || value === undefined) {
+    return ""
+  }
+  return String(value).trim()
+}
+
 const normalizeId = (value: Nullable<number | string>) => {
   const parsed =
     typeof value === "string" ? Number.parseInt(value, 10) : Number(value)
@@ -34,6 +41,7 @@ const normalizeId = (value: Nullable<number | string>) => {
 }
 
 type UpdateAccessMappingBody = {
+  access_id?: string | number
   country_code?: string
   mobile_ext?: string
   company_code?: string
@@ -47,6 +55,7 @@ async function getMappingById(id: number) {
     `
       SELECT
         am.id,
+        am.access_id,
         am.country_code,
         am.mobile_ext,
         am.company_code,
@@ -109,6 +118,15 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 
   const updates: string[] = []
   const params: any[] = []
+
+  if (body.access_id !== undefined) {
+    const accessId = normalizeAccessId(body.access_id)
+    if (!accessId) {
+      return res.status(400).json({ message: "access_id cannot be empty" })
+    }
+    updates.push(`access_id = $${updates.length + 1}`)
+    params.push(accessId)
+  }
 
   if (body.country_code !== undefined) {
     const code = normalizeString(body.country_code).toUpperCase()

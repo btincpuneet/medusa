@@ -21,6 +21,18 @@ const parseNumeric = (value: unknown): number | undefined => {
   return undefined
 }
 
+const parseAccessId = (value: unknown): string | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
+  }
+
+  if (typeof value === "string" && value.trim().length) {
+    return value.trim()
+  }
+
+  return undefined
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   await Promise.all([
     ensureRedingtonAddBccTable(),
@@ -28,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ensureRedingtonDomainTable(),
   ])
 
-  const accessId = parseNumeric(
+  const accessId = parseAccessId(
     req.query.access_id ?? req.query.accessId ?? req.query.access
   )
   const domainIdQuery = parseNumeric(req.query.domain_id ?? req.query.domainId)
@@ -40,7 +52,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       `
         SELECT domain_id
         FROM redington_access_mapping
-        WHERE id = $1
+        WHERE access_id = $1
         LIMIT 1
       `,
       [accessId]

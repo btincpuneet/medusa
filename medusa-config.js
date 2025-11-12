@@ -37,6 +37,10 @@ module.exports = defineConfig({
       resolve: "@medusajs/product",
       options: {},
     },
+    customer: {
+      resolve: "@medusajs/customer",
+      options: {},
+    },
     pricing: {
       resolve: "@medusajs/pricing",
       options: {},

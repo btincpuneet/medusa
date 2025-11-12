@@ -33,6 +33,10 @@ let guestUserAuditTableInitialized = false
 let invoiceAuditTableInitialized = false
 let customerSyncTableInitialized = false
 let retainCartConfigTableInitialized = false
+let bannerSliderTableInitialized = false
+let directoryCountryTableInitialized = false
+let directoryRegionTableInitialized = false
+let productDescImportTableInitialized = false
 
 export function getPgPool(): Pool {
   if (pool) {
@@ -113,6 +117,45 @@ export async function ensureRedingtonDomainExtentionTable() {
   domainExtentionTableInitialized = true
 }
 
+export async function ensureRedingtonDirectoryCountryTable() {
+  if (directoryCountryTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_directory_country (
+      country_id TEXT PRIMARY KEY,
+      iso2_code TEXT,
+      iso3_code TEXT,
+      name TEXT
+    );
+  `)
+
+  directoryCountryTableInitialized = true
+}
+
+export async function ensureRedingtonDirectoryRegionTable() {
+  if (directoryRegionTableInitialized) {
+    return
+  }
+
+  await ensureRedingtonDirectoryCountryTable()
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_directory_country_region (
+      region_id SERIAL PRIMARY KEY,
+      country_id TEXT NOT NULL REFERENCES redington_directory_country(country_id) ON DELETE CASCADE,
+      code TEXT,
+      name TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  directoryRegionTableInitialized = true
+}
+
 export function mapDomainRow(row: any) {
   const createdAt =
     row.created_at instanceof Date
@@ -145,6 +188,31 @@ export async function findDomainById(id: number) {
   )
 
   return rows[0] ? mapDomainRow(rows[0]) : null
+}
+
+const normalizeDomainName = (value: any): string | null => {
+  if (typeof value !== "string") {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : null
+}
+
+export async function listActiveDomainNames(): Promise<string[]> {
+  await ensureRedingtonDomainTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT domain_name
+      FROM redington_domain
+      WHERE is_active = TRUE
+      ORDER BY domain_name ASC
+    `
+  )
+
+  return rows
+    .map((row) => normalizeDomainName(row.domain_name))
+    .filter((value): value is string => Boolean(value))
 }
 
 export function mapDomainAuthRow(row: any) {
@@ -201,6 +269,328 @@ export function mapDomainExtentionRow(row: any) {
   }
 }
 
+export async function listActiveDomainExtensionNames(): Promise<string[]> {
+  await ensureRedingtonDomainExtentionTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT domain_extention_name
+      FROM redington_domain_extention
+      WHERE status = TRUE
+      ORDER BY domain_extention_name ASC
+    `
+  )
+
+  return rows
+    .map((row) => normalizeDomainName(row.domain_extention_name))
+    .filter((value): value is string => Boolean(value))
+}
+
+export type BannerSliderRow = {
+  id: number
+  identifier: string
+  title: string
+  status: boolean
+  banners: Array<{
+    id: number
+    title: string
+    image_url: string | null
+    link_url: string | null
+    sort_order: number
+  }>
+}
+
+export async function ensureRedingtonBannerSliderTables() {
+  if (bannerSliderTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_banner_slider (
+      id SERIAL PRIMARY KEY,
+      identifier TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      status BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner_slider
+      ADD COLUMN IF NOT EXISTS identifier TEXT,
+      ADD COLUMN IF NOT EXISTS title TEXT,
+      ADD COLUMN IF NOT EXISTS status BOOLEAN;
+  `)
+
+  await getPgPool().query(`
+    DO $convert$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'redington_banner_slider'
+          AND column_name = 'status'
+          AND udt_name <> 'bool'
+      ) THEN
+        EXECUTE '
+          ALTER TABLE redington_banner_slider
+          ALTER COLUMN status DROP DEFAULT
+        ';
+        EXECUTE '
+          ALTER TABLE redington_banner_slider
+          ALTER COLUMN status TYPE BOOLEAN
+          USING (
+            CASE
+              WHEN status IS NULL THEN TRUE
+              WHEN status::text IN (''1'', ''true'', ''t'', ''yes'', ''on'') THEN TRUE
+              ELSE FALSE
+            END
+          )
+        ';
+      END IF;
+    END
+    $convert$;
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner_slider
+      ALTER COLUMN status SET DEFAULT TRUE;
+  `)
+
+  await getPgPool().query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND indexname = 'redington_banner_slider_identifier_idx'
+      ) THEN
+        CREATE UNIQUE INDEX redington_banner_slider_identifier_idx
+          ON redington_banner_slider (identifier)
+          WHERE identifier IS NOT NULL;
+      END IF;
+    END $$;
+  `)
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_banner (
+      id SERIAL PRIMARY KEY,
+      slider_id INTEGER,
+      title TEXT NOT NULL,
+      image_url TEXT,
+      link_url TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      status BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner
+      ADD COLUMN IF NOT EXISTS slider_id INTEGER;
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner
+      ADD COLUMN IF NOT EXISTS image_url TEXT,
+      ADD COLUMN IF NOT EXISTS link_url TEXT,
+      ADD COLUMN IF NOT EXISTS sort_order INTEGER;
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner
+      ALTER COLUMN sort_order SET DEFAULT 0;
+  `)
+
+  await getPgPool().query(`
+    UPDATE redington_banner
+       SET image_url = COALESCE(image_url, image),
+           link_url = COALESCE(link_url, url_banner),
+           sort_order = COALESCE(sort_order, 0)
+     WHERE image_url IS NULL
+        OR link_url IS NULL
+        OR sort_order IS NULL;
+  `)
+
+  await getPgPool().query(`
+    DO $convert$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'redington_banner'
+          AND column_name = 'status'
+          AND udt_name <> 'bool'
+      ) THEN
+        EXECUTE '
+          ALTER TABLE redington_banner
+          ALTER COLUMN status DROP DEFAULT
+        ';
+        EXECUTE '
+          ALTER TABLE redington_banner
+          ALTER COLUMN status TYPE BOOLEAN
+          USING (
+            CASE
+              WHEN status IS NULL THEN TRUE
+              WHEN status::text IN (''1'', ''true'', ''t'', ''yes'', ''on'') THEN TRUE
+              ELSE FALSE
+            END
+          )
+        ';
+      END IF;
+    END
+    $convert$;
+  `)
+
+  await getPgPool().query(`
+    ALTER TABLE redington_banner
+      ALTER COLUMN status SET DEFAULT TRUE;
+  `)
+
+  await getPgPool().query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE table_name = 'redington_banner'
+          AND constraint_name = 'redington_banner_slider_fk'
+      ) THEN
+        ALTER TABLE redington_banner
+          DROP CONSTRAINT IF EXISTS redington_banner_slider_fk;
+        ALTER TABLE redington_banner
+          ADD CONSTRAINT redington_banner_slider_fk
+          FOREIGN KEY (slider_id)
+          REFERENCES redington_banner_slider(id)
+          ON DELETE CASCADE;
+      END IF;
+    END $$;
+  `)
+
+  bannerSliderTableInitialized = true
+}
+
+export async function listActiveBannerSliders(): Promise<BannerSliderRow[]> {
+  await ensureRedingtonBannerSliderTables()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT s.id,
+             s.identifier,
+             s.title,
+             s.status,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'id', b.id,
+                   'title', b.title,
+                   'image_url', b.image_url,
+                   'link_url', b.link_url,
+                   'sort_order', b.sort_order
+                 )
+                 ORDER BY b.sort_order ASC, b.id ASC
+               ) FILTER (WHERE b.id IS NOT NULL),
+               '[]'::json
+             ) AS banners
+      FROM redington_banner_slider s
+      LEFT JOIN redington_banner b
+        ON b.slider_id = s.id
+        AND COALESCE(b.status::text, 'true') NOT IN ('false', '0')
+      WHERE COALESCE(s.status::text, 'true') NOT IN ('false', '0')
+      GROUP BY s.id
+      ORDER BY s.id ASC
+    `
+  )
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    identifier: typeof row.identifier === "string" ? row.identifier : "",
+    title: typeof row.title === "string" ? row.title : "",
+    status: typeof row.status === "boolean" ? row.status : Boolean(row.status),
+    banners: Array.isArray(row.banners)
+      ? row.banners.map((banner: any) => ({
+          id: Number(banner.id),
+          title: typeof banner.title === "string" ? banner.title : "",
+          image_url:
+            typeof banner.image_url === "string" && banner.image_url.length
+              ? banner.image_url
+              : null,
+          link_url:
+            typeof banner.link_url === "string" && banner.link_url.length
+              ? banner.link_url
+              : null,
+          sort_order: Number(banner.sort_order ?? 0),
+        }))
+      : [],
+  }))
+}
+
+const normalizeCountryId = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed.toUpperCase() : null
+}
+
+export async function findDirectoryCountryWithRegions(countryId: string) {
+  const normalized = normalizeCountryId(countryId)
+  if (!normalized) {
+    return null
+  }
+
+  await ensureRedingtonDirectoryCountryTable()
+  await ensureRedingtonDirectoryRegionTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT country_id, iso2_code, iso3_code, name
+      FROM redington_directory_country
+      WHERE UPPER(country_id) = $1
+      LIMIT 1
+    `,
+    [normalized]
+  )
+
+  if (!rows.length) {
+    return null
+  }
+
+  const [country] = rows
+
+  const { rows: regionRows } = await getPgPool().query(
+    `
+      SELECT region_id, country_id, code, name
+      FROM redington_directory_country_region
+      WHERE UPPER(country_id) = $1
+      ORDER BY sort_order ASC, name ASC, region_id ASC
+    `,
+    [normalized]
+  )
+
+  return {
+    country_id: country.country_id,
+    iso2_code: country.iso2_code,
+    iso3_code: country.iso3_code,
+    name: country.name,
+    regions: regionRows.map((region) => ({
+      region_id: Number(region.region_id),
+      country_id: region.country_id,
+      code:
+        typeof region.code === "string" && region.code.trim().length
+          ? region.code
+          : null,
+      name:
+        typeof region.name === "string" && region.name.trim().length
+          ? region.name
+          : null,
+    })),
+  }
+}
+
 export async function findDomainExtentionById(id: number) {
   await ensureRedingtonDomainExtentionTable()
 
@@ -253,6 +643,22 @@ export function mapCompanyCodeRow(row: any) {
     created_at: createdAt,
     updated_at: updatedAt,
   }
+}
+
+export async function findCompanyCodeByCode(companyCode: string) {
+  await ensureRedingtonCompanyCodeTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_company_code
+      WHERE company_code = $1
+      LIMIT 1
+    `,
+    [companyCode]
+  )
+
+  return rows[0] ? mapCompanyCodeRow(rows[0]) : null
 }
 
 function parseBrandIds(input: any): string[] {
@@ -825,6 +1231,49 @@ export async function ensureRedingtonGuestTokenTable() {
   guestTokenTableInitialized = true
 }
 
+export type GuestTokenRow = {
+  id: number
+  email: string
+  token: string
+  expires_at: string
+}
+
+export async function findActiveGuestToken(
+  token: string
+): Promise<GuestTokenRow | null> {
+  await ensureRedingtonGuestTokenTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT id, email, token, expires_at
+      FROM redington_guest_token
+      WHERE token = $1
+      LIMIT 1
+    `,
+    [token]
+  )
+
+  if (!rows[0]) {
+    return null
+  }
+
+  const expiresAt =
+    rows[0].expires_at instanceof Date
+      ? rows[0].expires_at
+      : new Date(rows[0].expires_at)
+
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+    return null
+  }
+
+  return {
+    id: Number(rows[0].id),
+    email: typeof rows[0].email === "string" ? rows[0].email : "",
+    token: typeof rows[0].token === "string" ? rows[0].token : "",
+    expires_at: expiresAt.toISOString(),
+  }
+}
+
 export async function ensureRedingtonOtpTable() {
   if (otpTableInitialized) {
     return
@@ -1098,6 +1547,114 @@ export function mapHomeVideoRow(row: any): HomeVideoRow {
   }
 }
 
+export async function listHomeVideos(): Promise<HomeVideoRow[]> {
+  await ensureRedingtonHomeVideoTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT id, title, url, status, created_at, updated_at
+      FROM redington_home_video
+      ORDER BY created_at DESC
+    `
+  )
+
+  return rows.map(mapHomeVideoRow)
+}
+
+export async function findHomeVideoById(
+  id: number
+): Promise<HomeVideoRow | null> {
+  await ensureRedingtonHomeVideoTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT id, title, url, status, created_at, updated_at
+      FROM redington_home_video
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  )
+
+  return rows[0] ? mapHomeVideoRow(rows[0]) : null
+}
+
+type CreateHomeVideoInput = {
+  title: string
+  url: string
+  status?: boolean
+}
+
+export async function createHomeVideo(
+  input: CreateHomeVideoInput
+): Promise<HomeVideoRow> {
+  await ensureRedingtonHomeVideoTable()
+
+  const status =
+    typeof input.status === "boolean" ? input.status : Boolean(input.status)
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_home_video (title, url, status)
+      VALUES ($1, $2, $3)
+      RETURNING id, title, url, status, created_at, updated_at
+    `,
+    [input.title, input.url, status ?? true]
+  )
+
+  return mapHomeVideoRow(rows[0])
+}
+
+type UpdateHomeVideoInput = {
+  title?: string
+  url?: string
+  status?: boolean
+}
+
+export async function updateHomeVideo(
+  id: number,
+  updates: UpdateHomeVideoInput
+): Promise<HomeVideoRow> {
+  await ensureRedingtonHomeVideoTable()
+
+  const existing = await findHomeVideoById(id)
+  if (!existing) {
+    throw new Error("Home video not found")
+  }
+
+  const nextTitle =
+    updates.title !== undefined ? updates.title : existing.title
+  const nextUrl = updates.url !== undefined ? updates.url : existing.url
+  const nextStatus =
+    updates.status !== undefined ? updates.status : existing.status
+
+  const { rows } = await getPgPool().query(
+    `
+      UPDATE redington_home_video
+      SET title = $2,
+          url = $3,
+          status = $4,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, title, url, status, created_at, updated_at
+    `,
+    [id, nextTitle, nextUrl, nextStatus]
+  )
+
+  return mapHomeVideoRow(rows[0])
+}
+
+export async function deleteHomeVideo(id: number): Promise<void> {
+  await ensureRedingtonHomeVideoTable()
+  await getPgPool().query(
+    `
+      DELETE FROM redington_home_video
+      WHERE id = $1
+    `,
+    [id]
+  )
+}
+
 export type OrderReturnRow = {
   id: number
   order_id: string
@@ -1179,6 +1736,128 @@ export function mapOrderReturnRow(row: any): OrderReturnRow {
     created_at: createdAt,
     updated_at: updatedAt,
   }
+}
+
+export type CreateOrderReturnInput = {
+  order_id: string
+  user_name: string
+  user_email: string
+  sku: string
+  product_name: string
+  qty: number
+  price: number | null
+  order_status?: string | null
+  return_status?: string | null
+  remarks?: string | null
+}
+
+export async function listOrderReturnsByEmail(
+  email: string
+): Promise<OrderReturnRow[]> {
+  await ensureRedingtonOrderReturnTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_order_return
+      WHERE LOWER(user_email) = LOWER($1)
+      ORDER BY created_at DESC
+    `,
+    [email]
+  )
+
+  return rows.map(mapOrderReturnRow)
+}
+
+export async function listOrderReturnsByOrder(
+  orderId: string,
+  options?: { email?: string }
+): Promise<OrderReturnRow[]> {
+  await ensureRedingtonOrderReturnTable()
+
+  const values: any[] = [orderId]
+  let filter = ""
+  if (options?.email) {
+    values.push(options.email)
+    filter = "AND LOWER(user_email) = LOWER($2)"
+  }
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_order_return
+      WHERE order_id = $1
+        ${filter}
+      ORDER BY created_at DESC
+    `,
+    values
+  )
+
+  return rows.map(mapOrderReturnRow)
+}
+
+export async function insertOrderReturnEntries(
+  entries: CreateOrderReturnInput[]
+): Promise<OrderReturnRow[]> {
+  if (!entries.length) {
+    return []
+  }
+
+  await ensureRedingtonOrderReturnTable()
+
+  const inserted: OrderReturnRow[] = []
+
+  for (const entry of entries) {
+    const {
+      order_id,
+      user_name,
+      user_email,
+      sku,
+      product_name,
+      qty,
+      price,
+      order_status,
+      return_status,
+      remarks,
+    } = entry
+
+    const { rows } = await getPgPool().query(
+      `
+        INSERT INTO redington_order_return (
+          order_id,
+          user_name,
+          user_email,
+          sku,
+          product_name,
+          qty,
+          price,
+          order_status,
+          return_status,
+          remarks
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        RETURNING *
+      `,
+      [
+        order_id,
+        user_name,
+        user_email,
+        sku,
+        product_name,
+        qty,
+        price,
+        order_status ?? null,
+        return_status ?? null,
+        remarks ?? null,
+      ]
+    )
+
+    if (rows[0]) {
+      inserted.push(mapOrderReturnRow(rows[0]))
+    }
+  }
+
+  return inserted
 }
 
 export type ProductEnquiryRow = {
@@ -1275,6 +1954,262 @@ export function mapProductEnquiryRow(row: any): ProductEnquiryRow {
     created_at: createdAt,
     updated_at: updatedAt,
   }
+}
+
+export type ProductEnquiryFilters = {
+  status?: string
+  email?: string
+  sku?: string
+  product_id?: number
+  access_id?: number
+  user_id?: number
+}
+
+export type ProductEnquiryInput = {
+  user_id?: number | null
+  access_id?: number | null
+  domain_id?: number | null
+  company_code?: string | null
+  product_id?: number | null
+  fullname?: string | null
+  email?: string | null
+  product_name?: string | null
+  domain_name?: string | null
+  country_name?: string | null
+  sku?: string | null
+  price?: string | null
+  comments?: string | null
+  status?: string | null
+}
+
+const buildProductEnquiryWhere = (filters: Partial<ProductEnquiryFilters>) => {
+  const conditions: string[] = []
+  const params: Array<string | number> = []
+
+  if (filters.status) {
+    params.push(filters.status)
+    conditions.push(`LOWER(status) = LOWER($${params.length})`)
+  }
+
+  if (filters.email) {
+    params.push(filters.email)
+    conditions.push(`LOWER(email) = LOWER($${params.length})`)
+  }
+
+  if (filters.sku) {
+    params.push(filters.sku)
+    conditions.push(`LOWER(sku) = LOWER($${params.length})`)
+  }
+
+  if (filters.product_id !== undefined) {
+    params.push(filters.product_id)
+    conditions.push(`product_id = $${params.length}`)
+  }
+
+  if (filters.access_id !== undefined) {
+    params.push(filters.access_id)
+    conditions.push(`access_id = $${params.length}`)
+  }
+
+  if (filters.user_id !== undefined) {
+    params.push(filters.user_id)
+    conditions.push(`user_id = $${params.length}`)
+  }
+
+  return { conditions, params }
+}
+
+const clampPagination = (
+  limit: unknown,
+  offset: unknown,
+  maxLimit = 200,
+  defaultLimit = 25
+) => {
+  const parsedLimit = Number(limit)
+  const parsedOffset = Number(offset)
+
+  const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? Math.min(Math.trunc(parsedLimit), maxLimit)
+    : defaultLimit
+
+  const safeOffset = Number.isFinite(parsedOffset) && parsedOffset >= 0
+    ? Math.trunc(parsedOffset)
+    : 0
+
+  return { limit: safeLimit, offset: safeOffset }
+}
+
+export async function listProductEnquiries(
+  filters: Partial<ProductEnquiryFilters> = {},
+  pagination: { limit?: number; offset?: number } = {}
+): Promise<[ProductEnquiryRow[], number]> {
+  await ensureRedingtonProductEnquiryTable()
+
+  const { conditions, params } = buildProductEnquiryWhere(filters)
+  const { limit, offset } = clampPagination(
+    pagination.limit,
+    pagination.offset
+  )
+
+  const whereClause = conditions.length
+    ? `WHERE ${conditions.join(" AND ")}`
+    : ""
+
+  const dataParams = [...params, limit, offset]
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_product_enquiry
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT $${dataParams.length - 1}
+      OFFSET $${dataParams.length}
+    `,
+    dataParams
+  )
+
+  const countResult = await getPgPool().query(
+    `
+      SELECT COUNT(*) AS count
+      FROM redington_product_enquiry
+      ${whereClause}
+    `,
+    params
+  )
+
+  const count = Number(countResult.rows[0]?.count ?? 0)
+
+  return [rows.map(mapProductEnquiryRow), count]
+}
+
+export async function createProductEnquiry(
+  input: ProductEnquiryInput
+): Promise<ProductEnquiryRow> {
+  await ensureRedingtonProductEnquiryTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_product_enquiry (
+        user_id,
+        access_id,
+        domain_id,
+        company_code,
+        product_id,
+        fullname,
+        email,
+        product_name,
+        domain_name,
+        country_name,
+        sku,
+        price,
+        comments,
+        status
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+      )
+      RETURNING *
+    `,
+    [
+      input.user_id ?? null,
+      input.access_id ?? null,
+      input.domain_id ?? null,
+      input.company_code ?? null,
+      input.product_id ?? null,
+      input.fullname ?? null,
+      input.email ?? null,
+      input.product_name ?? null,
+      input.domain_name ?? null,
+      input.country_name ?? null,
+      input.sku ?? null,
+      input.price ?? null,
+      input.comments ?? null,
+      input.status ?? null,
+    ]
+  )
+
+  return mapProductEnquiryRow(rows[0])
+}
+
+export async function updateProductEnquiry(
+  id: number,
+  input: Partial<ProductEnquiryInput>
+): Promise<ProductEnquiryRow | null> {
+  await ensureRedingtonProductEnquiryTable()
+
+  const fields: string[] = []
+  const params: any[] = []
+
+  const addField = (column: string, value: any) => {
+    params.push(value)
+    fields.push(`${column} = $${params.length}`)
+  }
+
+  if (input.user_id !== undefined) addField("user_id", input.user_id)
+  if (input.access_id !== undefined) addField("access_id", input.access_id)
+  if (input.domain_id !== undefined) addField("domain_id", input.domain_id)
+  if (input.company_code !== undefined) addField("company_code", input.company_code)
+  if (input.product_id !== undefined) addField("product_id", input.product_id)
+  if (input.fullname !== undefined) addField("fullname", input.fullname)
+  if (input.email !== undefined) addField("email", input.email)
+  if (input.product_name !== undefined) addField("product_name", input.product_name)
+  if (input.domain_name !== undefined) addField("domain_name", input.domain_name)
+  if (input.country_name !== undefined) addField("country_name", input.country_name)
+  if (input.sku !== undefined) addField("sku", input.sku)
+  if (input.price !== undefined) addField("price", input.price)
+  if (input.comments !== undefined) addField("comments", input.comments)
+  if (input.status !== undefined) addField("status", input.status)
+
+  if (!fields.length) {
+    return retrieveProductEnquiry(id)
+  }
+
+  params.push(id)
+
+  const { rows } = await getPgPool().query(
+    `
+      UPDATE redington_product_enquiry
+      SET ${fields.join(", ")},
+          updated_at = NOW()
+      WHERE id = $${params.length}
+      RETURNING *
+    `,
+    params
+  )
+
+  return rows[0] ? mapProductEnquiryRow(rows[0]) : null
+}
+
+export async function deleteProductEnquiry(id: number): Promise<boolean> {
+  await ensureRedingtonProductEnquiryTable()
+
+  const result = await getPgPool().query(
+    `
+      DELETE FROM redington_product_enquiry
+      WHERE id = $1
+    `,
+    [id]
+  )
+
+  return result.rowCount > 0
+}
+
+export async function retrieveProductEnquiry(
+  id: number
+): Promise<ProductEnquiryRow | null> {
+  await ensureRedingtonProductEnquiryTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_product_enquiry
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  )
+
+  return rows[0] ? mapProductEnquiryRow(rows[0]) : null
 }
 
 export type MaxQtyRuleRow = {
@@ -1886,6 +2821,235 @@ export function mapProductPriceRow(row: any): ProductPriceRow {
   }
 }
 
+export type ProductDescImportLogRow = {
+  id: number
+  file_name: string
+  status: string
+  notes: string | null
+  initiated_by: string | null
+  total_rows: number
+  success_rows: number
+  failed_rows: number
+  log: any[] | null
+  created_at: string
+  updated_at: string
+}
+
+export async function ensureRedingtonProductDescImportTable() {
+  if (productDescImportTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_product_desc_import (
+      id SERIAL PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      initiated_by TEXT,
+      total_rows INTEGER NOT NULL DEFAULT 0,
+      success_rows INTEGER NOT NULL DEFAULT 0,
+      failed_rows INTEGER NOT NULL DEFAULT 0,
+      log JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  productDescImportTableInitialized = true
+}
+
+export function mapProductDescImportRow(row: any): ProductDescImportLogRow {
+  const createdAt =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : String(row.created_at)
+  const updatedAt =
+    row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : String(row.updated_at)
+
+  let parsedLog: any = null
+  if (row.log && typeof row.log === "object") {
+    parsedLog = row.log
+  } else if (typeof row.log === "string" && row.log.length) {
+    try {
+      parsedLog = JSON.parse(row.log)
+    } catch {
+      parsedLog = row.log
+    }
+  }
+
+  return {
+    id: Number(row.id),
+    file_name: row.file_name ?? "",
+    status: row.status ?? "pending",
+    notes: typeof row.notes === "string" ? row.notes : null,
+    initiated_by:
+      typeof row.initiated_by === "string" ? row.initiated_by : null,
+    total_rows: Number(row.total_rows ?? 0),
+    success_rows: Number(row.success_rows ?? 0),
+    failed_rows: Number(row.failed_rows ?? 0),
+    log: parsedLog,
+    created_at: createdAt,
+    updated_at: updatedAt,
+  }
+}
+
+export async function insertProductDescImportLog(input: {
+  file_name: string
+  status?: string
+  notes?: string | null
+  initiated_by?: string | null
+  total_rows?: number
+}): Promise<ProductDescImportLogRow> {
+  await ensureRedingtonProductDescImportTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_product_desc_import (
+        file_name,
+        status,
+        notes,
+        initiated_by,
+        total_rows
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `,
+    [
+      input.file_name,
+      input.status ?? "pending",
+      input.notes ?? null,
+      input.initiated_by ?? null,
+      input.total_rows ?? 0,
+    ]
+  )
+
+  return mapProductDescImportRow(rows[0])
+}
+
+export async function updateProductDescImportLog(
+  id: number,
+  updates: Partial<{
+    status: string
+    notes: string | null
+    initiated_by: string | null
+    total_rows: number
+    success_rows: number
+    failed_rows: number
+    log: any
+  }>
+): Promise<ProductDescImportLogRow | null> {
+  await ensureRedingtonProductDescImportTable()
+
+  const fields: string[] = []
+  const values: any[] = []
+
+  const push = (column: string, value: any) => {
+    values.push(value)
+    fields.push(`${column} = $${values.length}`)
+  }
+
+  if (updates.status !== undefined) {
+    push("status", updates.status)
+  }
+  if (updates.notes !== undefined) {
+    push("notes", updates.notes)
+  }
+  if (updates.initiated_by !== undefined) {
+    push("initiated_by", updates.initiated_by)
+  }
+  if (updates.total_rows !== undefined) {
+    push("total_rows", updates.total_rows)
+  }
+  if (updates.success_rows !== undefined) {
+    push("success_rows", updates.success_rows)
+  }
+  if (updates.failed_rows !== undefined) {
+    push("failed_rows", updates.failed_rows)
+  }
+  if (updates.log !== undefined) {
+    push("log", JSON.stringify(updates.log))
+  }
+
+  if (!fields.length) {
+    return findProductDescImportLog(id)
+  }
+
+  values.push(id)
+
+  const { rows } = await getPgPool().query(
+    `
+      UPDATE redington_product_desc_import
+      SET ${fields.join(", ")},
+          updated_at = NOW()
+      WHERE id = $${values.length}
+      RETURNING *
+    `,
+    values
+  )
+
+  return rows[0] ? mapProductDescImportRow(rows[0]) : null
+}
+
+export async function listProductDescImportLogs(options?: {
+  limit?: number
+  offset?: number
+}): Promise<{ logs: ProductDescImportLogRow[]; count: number }> {
+  await ensureRedingtonProductDescImportTable()
+
+  const limit =
+    options?.limit && Number.isFinite(options.limit)
+      ? Math.min(Math.max(Number(options.limit), 1), 100)
+      : 20
+  const offset =
+    options?.offset && Number.isFinite(options.offset) && options.offset > 0
+      ? Math.trunc(options.offset)
+      : 0
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT id,
+             file_name,
+             status,
+             notes,
+             initiated_by,
+             total_rows,
+             success_rows,
+             failed_rows,
+             created_at,
+             updated_at
+      FROM redington_product_desc_import
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+    `,
+    [limit, offset]
+  )
+
+  const { rows: countRows } = await getPgPool().query(
+    `SELECT COUNT(*)::int AS count FROM redington_product_desc_import`
+  )
+
+  return {
+    logs: rows.map(mapProductDescImportRow),
+    count: countRows[0]?.count ?? 0,
+  }
+}
+
+export async function findProductDescImportLog(
+  id: number
+): Promise<ProductDescImportLogRow | null> {
+  await ensureRedingtonProductDescImportTable()
+
+  const { rows } = await getPgPool().query(
+    `SELECT * FROM redington_product_desc_import WHERE id = $1`,
+    [id]
+  )
+
+  return rows[0] ? mapProductDescImportRow(rows[0]) : null
+}
+
 export type GuestUserAuditRow = {
   id: number
   email: string
@@ -1966,6 +3130,67 @@ export async function recordGuestUserAudit(entry: {
   )
 
   return mapGuestUserAuditRow(rows[0])
+}
+
+export async function listGuestUserAudits(options: {
+  email?: string
+  success?: boolean | null
+  limit?: number
+  offset?: number
+}): Promise<[GuestUserAuditRow[], number]> {
+  await ensureRedingtonGuestUserAuditTable()
+
+  const filters: string[] = []
+  const params: any[] = []
+
+  if (options.email && options.email.trim().length) {
+    params.push(`%${options.email.trim().toLowerCase()}%`)
+    filters.push(`LOWER(email) LIKE $${params.length}`)
+  }
+
+  if (typeof options.success === "boolean") {
+    params.push(options.success)
+    filters.push(`success = $${params.length}`)
+  }
+
+  const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+
+  const limit =
+    typeof options.limit === "number" && Number.isFinite(options.limit)
+      ? Math.min(Math.max(1, Math.trunc(options.limit)), 100)
+      : 25
+
+  const offset =
+    typeof options.offset === "number" && Number.isFinite(options.offset)
+      ? Math.max(0, Math.trunc(options.offset))
+      : 0
+
+  const queryParams = [...params, limit, offset]
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_guest_user_audit
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `,
+    queryParams
+  )
+
+  const countResult = await getPgPool().query(
+    `
+      SELECT COUNT(*) AS count
+      FROM redington_guest_user_audit
+      ${whereClause}
+    `,
+    params
+  )
+
+  const count = Number(countResult.rows[0]?.count ?? 0)
+
+  return [rows.map(mapGuestUserAuditRow), count]
 }
 
 export type InvoiceAuditRow = {
@@ -2235,6 +3460,67 @@ export async function upsertRedingtonCustomerSync(options: {
   }
 
   return inserted
+}
+
+export async function listRedingtonCustomerSync(options: {
+  email?: string
+  sapSync?: boolean | null
+  limit?: number
+  offset?: number
+}): Promise<[CustomerSyncRow[], number]> {
+  await ensureRedingtonCustomerSyncTable()
+
+  const filters: string[] = []
+  const params: any[] = []
+
+  if (options.email && options.email.trim().length) {
+    params.push(`%${options.email.trim().toLowerCase()}%`)
+    filters.push(`LOWER(customer_email) LIKE $${params.length}`)
+  }
+
+  if (typeof options.sapSync === "boolean") {
+    params.push(options.sapSync)
+    filters.push(`sap_sync = $${params.length}`)
+  }
+
+  const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+
+  const limit =
+    typeof options.limit === "number" && Number.isFinite(options.limit)
+      ? Math.min(Math.max(1, Math.trunc(options.limit)), 100)
+      : 25
+
+  const offset =
+    typeof options.offset === "number" && Number.isFinite(options.offset)
+      ? Math.max(0, Math.trunc(options.offset))
+      : 0
+
+  const queryParams = [...params, limit, offset]
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_customer_sync
+      ${whereClause}
+      ORDER BY updated_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `,
+    queryParams
+  )
+
+  const countResult = await getPgPool().query(
+    `
+      SELECT COUNT(*) AS count
+      FROM redington_customer_sync
+      ${whereClause}
+    `,
+    params
+  )
+
+  const count = Number(countResult.rows[0]?.count ?? 0)
+
+  return [rows.map(mapCustomerSyncRow), count]
 }
 
 export type GetInTouchRow = {

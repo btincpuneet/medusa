@@ -8,14 +8,13 @@ import {
   mapCustomerNumberRow,
 } from "../../../../lib/pg"
 
-const parseNumeric = (value: unknown): number | undefined => {
+const parseAccessId = (value: unknown): string | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value
+    return String(value)
   }
 
   if (typeof value === "string" && value.trim().length) {
-    const parsed = Number.parseInt(value.trim(), 10)
-    return Number.isFinite(parsed) ? parsed : undefined
+    return value.trim()
   }
 
   return undefined
@@ -27,7 +26,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     ensureRedingtonCustomerNumberTable(),
   ])
 
-  const accessId = parseNumeric(
+  const accessId = parseAccessId(
     req.query.access_id ?? req.query.accessId ?? req.query.access
   )
 
@@ -46,7 +45,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       FROM redington_access_mapping am
       LEFT JOIN redington_domain d ON d.id = am.domain_id
       LEFT JOIN redington_domain_extention de ON de.id = am.domain_extention_id
-      WHERE am.id = $1
+      WHERE am.access_id = $1
       LIMIT 1
     `,
     [accessId]
@@ -101,7 +100,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   return res.json({
     access: {
-      id: mapping.id,
+      id: mapping.access_id ?? String(mapping.id),
       company_code: mapping.company_code,
       domain_id: mapping.domain_id,
       domain_name: mapping.domain_name,

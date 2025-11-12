@@ -1,6 +1,9 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { findDirectoryCountryWithRegions } from "../../../../../../lib/pg"
+import { createMagentoB2CClient } from "../../../../../../api/magentoClient"
+
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -69,12 +72,33 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   }
 
   const country = await findDirectoryCountryWithRegions(countryId)
-  if (!country) {
+  if (country) {
+    return res.json(formatCountry(country))
+  }
+
+  if (!MAGENTO_REST_BASE_URL) {
     return res.status(404).json({
       message: `Country ${countryId} not found`,
     })
   }
 
-  return res.json(formatCountry(country))
-}
+  try {
+    const client = createMagentoB2CClient({
+      baseUrl: MAGENTO_REST_BASE_URL,
+    })
 
+    const response = await client.request({
+      url: `directory/countries/${encodeURIComponent(countryId)}`,
+      method: "GET",
+    })
+
+    return res.status(response.status).json(response.data)
+  } catch (error: any) {
+    const status = error?.response?.status ?? 404
+    const message =
+      error?.response?.data?.message ||
+      error?.message ||
+      `Country ${countryId} not found`
+    return res.status(status).json({ message })
+  }
+}

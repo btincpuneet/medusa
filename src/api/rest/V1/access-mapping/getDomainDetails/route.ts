@@ -99,7 +99,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   if (countryCode === "ALL") {
     return res.json({
       domain_names: mapped.map((entry) => ({
-        access_id: entry.id,
+        access_id: entry.access_id ?? entry.id,
         domain_name: entry.domain_name,
         domain_extention_name: entry.domain_extention_name,
         company_code: entry.company_code,
@@ -116,7 +116,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     country_code: countryCode,
     mobile_extension: mobileExtension,
     domain_names: mapped.map((entry) => ({
-      access_id: entry.id,
+      access_id: entry.access_id ?? entry.id,
       domain_name: entry.domain_name,
       domain_extention_name: entry.domain_extention_name,
       company_code: entry.company_code,
