@@ -197,12 +197,13 @@ module.exports.default = async function migrate({ logger }) {
         params: {
           limit: ORDER_SCAN_LIMIT,
           offset,
+          fields: "id,metadata,magento_order_id",
         },
       })
 
       const batch = data?.orders || []
       for (const order of batch) {
-        const inc = order?.metadata?.magento_increment_id
+        const inc = order?.magento_order_id || order?.metadata?.magento_increment_id
         if (inc) {
           ids.add(String(inc))
         }
@@ -360,7 +361,10 @@ module.exports.default = async function migrate({ logger }) {
 
       // 3) sanity metadata on order (optional patch)
       if (finalOrder?.id) {
-        await admin.post(`/admin/orders/${finalOrder.id}`, { metadata })
+        await admin.post(`/admin/orders/${finalOrder.id}`, {
+          metadata,
+          magento_order_id: String(inc),
+        })
         importedIncrements.add(String(inc))
       }
 

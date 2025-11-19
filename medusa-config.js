@@ -5,6 +5,18 @@ const { loadEnv, defineConfig } = require("@medusajs/framework/utils")
 // Load .env.[NODE_ENV] and .env
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
+const buildCors = (...values) => {
+  const origins = values
+    .filter(Boolean)
+    .flatMap((value) =>
+      String(value)
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+    )
+  return Array.from(new Set(origins)).join(",")
+}
+
 module.exports = defineConfig({
   projectConfig: {
     // DB connection string, e.g.:
@@ -16,15 +28,21 @@ module.exports = defineConfig({
 
     http: {
       // Set permissive defaults for local dev
-      storeCors:
+      storeCors: buildCors(
         process.env.STORE_CORS ||
-        "http://localhost:8000,http://localhost:3000,http://localhost:3002,http://localhost:5173",
-      adminCors:
+          "http://localhost:8000,http://localhost:3000,http://localhost:3002,http://localhost:5173",
+        process.env.STORE_CORS_EXTRA
+      ),
+      adminCors: buildCors(
         process.env.ADMIN_CORS ||
-        "http://localhost:7001,http://localhost:9000,http://localhost:3002,http://localhost:5173",
-      authCors:
+          "http://localhost:7001,http://localhost:9000,http://localhost:3002,http://localhost:5173",
+        process.env.ADMIN_CORS_EXTRA
+      ),
+      authCors: buildCors(
         process.env.AUTH_CORS ||
-        "http://localhost:8000,http://localhost:3000,http://localhost:3002,http://localhost:5173",
+          "http://localhost:8000,http://localhost:3000,http://localhost:3002,http://localhost:5173",
+        process.env.AUTH_CORS_EXTRA
+      ),
 
       jwtSecret: process.env.JWT_SECRET || "supersecret",
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
@@ -55,6 +73,10 @@ module.exports = defineConfig({
     },
     promotion: {
       resolve: "@medusajs/promotion",
+      options: {},
+    },
+    order: {
+      resolve: "@medusajs/order",
       options: {},
     },
     // (Optional, enable later if you need them)

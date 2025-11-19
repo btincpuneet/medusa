@@ -1,10 +1,15 @@
+import axios from "axios"
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+
 import { authenticateWithLegacySupport } from "../../../../../utils/legacy-auth"
+import { updateMagentoCustomerPassword } from "../../../../../utils/magento-customer"
 
 type MagentoLoginBody = {
   username?: string
   password?: string
 }
+
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -54,6 +59,49 @@ const extractTokenString = (payload: any): string | null => {
   return null
 }
 
+const buildMagentoLoginUrl = () => {
+  if (!MAGENTO_REST_BASE_URL) {
+    throw new Error(
+      "MAGENTO_REST_BASE_URL is not configured. Unable to authenticate customers against Magento."
+    )
+  }
+
+  return `${MAGENTO_REST_BASE_URL.replace(/\/$/, "")}/integration/customer/token`
+}
+
+const exchangeMagentoToken = async (username: string, password: string) => {
+  const url = buildMagentoLoginUrl()
+
+  const response = await axios.post(
+    url,
+    { username, password },
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      validateStatus: () => true,
+      timeout: 10000,
+    }
+  )
+
+  if (
+    response.status === 200 &&
+    typeof response.data === "string" &&
+    response.data.trim().length
+  ) {
+    return response.data.trim()
+  }
+
+  const message =
+    (response.data && response.data.message) ||
+    (typeof response.data === "string" ? response.data : null) ||
+    "Failed to authenticate with Magento."
+
+  const error: any = new Error(message)
+  error.status = response.status === 401 ? 401 : 502
+  throw error
+}
+
 export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
   res.status(204).send()
@@ -68,30 +116,68 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     return res.status(400).json({ message: "username and password are required" })
   }
 
-  const email = String(username).trim().toLowerCase()
+  const normalizedUsername = String(username).trim()
+  if (!normalizedUsername.length) {
+    return res.status(400).json({ message: "A valid username is required." })
+  }
 
+  const email = normalizedUsername.toLowerCase()
+
+  let medusaToken: string | null = null
   try {
     const authPayload = await authenticateWithLegacySupport(req, email, password)
-    const tokenString = extractTokenString(authPayload)
-
-    if (!tokenString) {
-      return res.status(500).json({
-        message: "Authentication succeeded but no token was returned.",
-      })
+    medusaToken = extractTokenString(authPayload)
+    if (medusaToken) {
+      res.header("X-Medusa-Token", medusaToken)
     }
-
-    return res.status(200).json(tokenString)
   } catch (error: any) {
-    const status =
+    const isUnauthorized =
       error?.name === "UnauthorizedError" || error?.message === "Unauthorized"
-        ? 401
-        : 500
-
-    return res.status(status).json({
-      message:
-        status === 401
-          ? "The credentials provided are invalid."
-          : error?.message || "Unexpected error during authentication.",
-    })
+    if (!isUnauthorized) {
+      console.warn("Medusa authentication failed, attempting Magento fallback.", error)
+    }
   }
+
+  let magentoToken: string | null = null
+  let magentoError: any = null
+
+  try {
+    magentoToken = await exchangeMagentoToken(normalizedUsername, password)
+  } catch (error: any) {
+    magentoError = error
+    const unauthorized =
+      error?.name === "UnauthorizedError" ||
+      error?.message === "Unauthorized" ||
+      error?.status === 401
+
+    if (unauthorized) {
+      await updateMagentoCustomerPassword(email, password).catch(() => undefined)
+      try {
+        magentoToken = await exchangeMagentoToken(normalizedUsername, password)
+        magentoError = null
+      } catch (retryError: any) {
+        magentoError = retryError
+      }
+    }
+  }
+
+  if (magentoToken) {
+    return res.status(200).json(magentoToken)
+  }
+
+  const unauthorized =
+    magentoError?.name === "UnauthorizedError" ||
+    magentoError?.message === "Unauthorized" ||
+    magentoError?.status === 401
+  const status = unauthorized ? 401 : magentoError?.status || 500
+
+  const message =
+    status === 401
+      ? "The credentials provided are invalid."
+      : magentoError?.message || "Unexpected error during authentication."
+
+  return res.status(status).json({
+    message,
+    ...(medusaToken ? { medusa_token: medusaToken } : {}),
+  })
 }

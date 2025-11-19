@@ -45,12 +45,36 @@ export const findRegisteredCustomerByEmail = async (
     return null
   }
 
-  const customers = await service.listCustomers({
+  const selector: Parameters<ICustomerModuleService["listCustomers"]>[0] = {
     email: normalizedEmail,
     has_account: true,
-  })
+  }
 
-  return customers[0] ?? null
+  let customers = await service.listCustomers(selector)
+  if (customers[0]) {
+    return customers[0]
+  }
+
+  // Some migrated customers still have upper-case emails stored in Magento's format.
+  // Retry with a case-insensitive match so password resets and logins keep working.
+  const fallbackSelector: Parameters<
+    ICustomerModuleService["listCustomers"]
+  >[0] = {
+    has_account: true,
+    email: { $ilike: normalizedEmail },
+  }
+
+  customers = await service.listCustomers(fallbackSelector)
+  if (!customers.length) {
+    return null
+  }
+
+  return (
+    customers.find(
+      (customer) =>
+        customer.email?.trim().toLowerCase() === normalizedEmail
+    ) || customers[0]
+  )
 }
 
 const getAuthIdentityId = (provider: ProviderIdentityDTO) =>

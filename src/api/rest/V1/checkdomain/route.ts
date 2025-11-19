@@ -4,6 +4,7 @@ import {
   ensureRedingtonDomainAuthTable,
   ensureRedingtonDomainTable,
   getPgPool,
+  listActiveDomainExtensionNames,
 } from "../../../../lib/pg"
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
@@ -104,6 +105,54 @@ const extractDomain = (body: CheckDomainRequest): string | null => {
   return email.slice(atIndex + 1)
 }
 
+const buildDomainLookupValues = (
+  domain: string,
+  extensions: string[]
+): string[] => {
+  const normalized = domain.trim().toLowerCase()
+  if (!normalized) {
+    return []
+  }
+
+  const normalizedExtensions = extensions
+    .map((entry) => (entry || "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((entry) => (entry.startsWith(".") ? entry : `.${entry}`))
+    .sort((a, b) => b.length - a.length)
+
+  const values = new Set<string>()
+  values.add(normalized)
+
+  const firstDot = normalized.indexOf(".")
+  if (firstDot !== -1) {
+    values.add(normalized.slice(0, firstDot))
+  }
+
+  for (const ext of normalizedExtensions) {
+    if (!normalized.endsWith(ext)) {
+      continue
+    }
+
+    const withoutExt = normalized
+      .slice(0, normalized.length - ext.length)
+      .replace(/\.+$/, "")
+
+    if (!withoutExt) {
+      continue
+    }
+
+    values.add(withoutExt)
+
+    const lastDot = withoutExt.lastIndexOf(".")
+    if (lastDot !== -1) {
+      values.add(withoutExt.slice(lastDot + 1))
+      values.add(withoutExt.slice(0, lastDot))
+    }
+  }
+
+  return Array.from(values).filter(Boolean)
+}
+
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
@@ -119,6 +168,14 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     })
   }
 
+  const extensions = await listActiveDomainExtensionNames()
+  const lookupValues = buildDomainLookupValues(domain, extensions)
+  if (!lookupValues.length) {
+    return res.status(400).json({
+      message: "A valid domain value is required.",
+    })
+  }
+
   const { rows } = await getPgPool().query(
     `
       SELECT
@@ -130,10 +187,11 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
         da.mobile_otp
       FROM redington_domain d
       LEFT JOIN redington_domain_auth da ON da.domain_id = d.id
-      WHERE LOWER(d.domain_name) = LOWER($1)
+      WHERE LOWER(d.domain_name) = ANY($1::text[])
+      ORDER BY array_position($1::text[], LOWER(d.domain_name))
       LIMIT 1
     `,
-    [domain]
+    [lookupValues]
   )
 
   if (!rows[0]) {

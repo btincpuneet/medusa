@@ -6,10 +6,6 @@ import {
   updateCustomerRecord,
 } from "../../../../../lib/customer-auth"
 import { findActiveGuestToken, getPgPool } from "../../../../../lib/pg"
-import { createMagentoB2CClient } from "../../../../../api/magentoClient"
-
-const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL
-const MAGENTO_ADMIN_TOKEN = process.env.MAGENTO_ADMIN_TOKEN
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -97,266 +93,188 @@ const fetchCustomerAddresses = async (customerId: string) => {
   return rows
 }
 
-type CustomAttribute = {
-  attribute_code: string
-  value: unknown
+const formatDateTime = (value?: string | Date | null) => {
+  const candidate = value ? new Date(value) : new Date()
+  const date = Number.isNaN(candidate.getTime()) ? new Date() : candidate
+
+  const pad = (num: number) => String(num).padStart(2, "0")
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
+    date.getSeconds()
+  )}`
 }
 
-const coerceAttributeValue = (value: any): string | number | boolean => {
+const sanitizeString = (value: unknown, fallback = "") => {
+  if (typeof value === "string") {
+    return value.trim()
+  }
   if (value === null || value === undefined) {
-    return ""
+    return fallback
   }
-
-  return typeof value === "string" ? value : String(value)
+  return String(value).trim()
 }
 
-const appendMetadataAttribute = (
-  attributes: CustomAttribute[],
-  code: string,
-  value: any
-) => {
+const toNullableString = (value: unknown) => {
+  const trimmed = sanitizeString(value)
+  return trimmed.length ? trimmed : null
+}
+
+const coerceNumber = (value: unknown, fallback: number): number => {
   if (value === null || value === undefined || value === "") {
-    return
+    return fallback
   }
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? fallback : parsed
+}
 
-  const existing = attributes.find(
-    (attr) =>
-      attr &&
-      typeof attr.attribute_code === "string" &&
-      attr.attribute_code.toLowerCase() === code.toLowerCase()
-  )
+const coerceNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? null : parsed
+}
 
-  if (existing) {
-    if (
-      existing.value === undefined ||
-      existing.value === null ||
-      existing.value === ""
-    ) {
-      existing.value = coerceAttributeValue(value)
+const coerceBoolean = (value: unknown, fallback = false): boolean => {
+  if (typeof value === "boolean") {
+    return value
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1"].includes(normalized)) {
+      return true
     }
-    return
+    if (["false", "0"].includes(normalized)) {
+      return false
+    }
   }
-
-  attributes.push({
-    attribute_code: code,
-    value: coerceAttributeValue(value),
-  })
+  if (typeof value === "number") {
+    return value !== 0
+  }
+  return fallback
 }
 
-const toCustomAttributeArray = (
-  metadata: Record<string, any> | null | undefined
-) => {
-  if (!metadata) {
-    return []
+const parseMetadata = (value: unknown): Record<string, unknown> => {
+  if (!value) {
+    return {}
   }
-
-  const rawAttributes =
-    metadata.magento_custom_attributes ?? metadata.custom_attributes
-
-  let attributes: CustomAttribute[] = []
-
-  if (Array.isArray(rawAttributes)) {
-    attributes = rawAttributes
-      .filter((attr) => attr && typeof attr.attribute_code === "string")
-      .map((attr) => ({
-        attribute_code: attr.attribute_code,
-        value: attr.value ?? attr.attribute_value ?? "",
-      }))
-  } else if (rawAttributes && typeof rawAttributes === "object") {
-    attributes = Object.entries(rawAttributes).map(
-      ([attribute_code, value]) => ({
-        attribute_code,
-        value,
-      })
-    )
+  if (typeof value === "object") {
+    return value as Record<string, unknown>
   }
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
 
-  appendMetadataAttribute(
-    attributes,
-    "access_id",
-    metadata.access_id ?? metadata.magento_access_id
-  )
-  appendMetadataAttribute(
-    attributes,
-    "company_code",
-    metadata.company_code ?? metadata.magento_company_code
+const mapAddressToMagento = (row: any, customerId: string) => {
+  const metadata = parseMetadata(row.metadata)
+
+  const regionCode = toNullableString(metadata.region_code)
+  const regionLabel =
+    toNullableString(metadata.region_label) ||
+    toNullableString(metadata.region) ||
+    toNullableString(row.province)
+  const regionId = coerceNullableNumber(
+    metadata.region_id ?? metadata.regionId
   )
 
-  return attributes
-}
-
-const normalizeStreetLines = (line1?: string | null, line2?: string | null) => {
-  const lines = []
-  if (typeof line1 === "string" && line1.trim().length) {
-    lines.push(line1.trim())
-  }
-  if (typeof line2 === "string" && line2.trim().length) {
-    lines.push(line2.trim())
-  }
-  return lines.length ? lines : [""]
-}
-
-const buildMagentoAddress = (row: any) => {
-  const metadata =
-    row && typeof row.metadata === "object" && row.metadata !== null
-      ? row.metadata
-      : {}
-
-  const regionObject =
-    (metadata.magento_region_object &&
-      typeof metadata.magento_region_object === "object") ||
-    null
-
-  const region = {
-    region_code:
-      regionObject?.region_code ??
-      metadata.magento_region_code ??
-      metadata.magento_region ??
-      null,
-    region:
-      regionObject?.region ??
-      metadata.magento_region ??
-      row.province ??
-      null,
-    region_id:
-      regionObject?.region_id ??
-      metadata.magento_region_id ??
-      null,
-  }
+  const street = [
+    sanitizeString(row.address_1),
+    sanitizeString(row.address_2),
+  ]
+  const country = sanitizeString(row.country_code)
 
   return {
     id: row.id,
-    customer_id: row.customer_id,
-    region,
-    region_id: region.region_id,
-    country_id: row.country_code ?? "",
-    street: normalizeStreetLines(row.address_1, row.address_2),
-    telephone: row.phone ?? "",
-    postcode: row.postal_code ?? "",
-    city: row.city ?? "",
-    firstname: row.first_name ?? "",
-    lastname: row.last_name ?? "",
-    company: metadata.company ?? null,
-    default_shipping: Boolean(row.is_default_shipping),
-    default_billing: Boolean(row.is_default_billing),
-  }
-}
-
-const buildMagentoCustomerPayload = (
-  row: any,
-  addresses: any[]
-) => {
-  const metadata =
-    row && typeof row.metadata === "object" && row.metadata !== null
-      ? row.metadata
-      : {}
-
-  return {
-    id: row.id,
-    group_id: metadata.group_id ?? 1,
-    default_billing: metadata.default_billing ?? null,
-    default_shipping: metadata.default_shipping ?? null,
-    confirmation: metadata.confirmation ?? null,
-    created_at: row.created_at
-      ? new Date(row.created_at).toISOString()
-      : new Date().toISOString(),
-    updated_at: row.updated_at
-      ? new Date(row.updated_at).toISOString()
-      : new Date().toISOString(),
-    created_in: metadata.created_in ?? "Medusa",
-    dob: metadata.dob ?? null,
-    email: row.email,
-    firstname: row.first_name ?? "",
-    lastname: row.last_name ?? "",
-    middlename: metadata.middlename ?? null,
-    prefix: metadata.prefix ?? null,
-    suffix: metadata.suffix ?? null,
-    gender: metadata.gender ?? null,
-    store_id: metadata.store_id ?? 1,
-    website_id: metadata.website_id ?? 1,
-    addresses: addresses.map(buildMagentoAddress),
-    disable_auto_group_change: metadata.disable_auto_group_change ?? 0,
-    extension_attributes: {
-      is_subscribed: metadata.is_subscribed ?? false,
+    customer_id: customerId,
+    region: {
+      region_code: regionCode,
+      region: regionLabel,
+      region_id: regionId,
     },
-    custom_attributes: toCustomAttributeArray(metadata),
+    region_id: regionId,
+    country_id: country ? country.toUpperCase() : "",
+    street,
+    telephone: sanitizeString(row.phone),
+    postcode: sanitizeString(row.postal_code),
+    city: sanitizeString(row.city),
+    firstname: sanitizeString(row.first_name),
+    lastname: sanitizeString(row.last_name),
+    default_shipping: coerceBoolean(
+      metadata.default_shipping ?? row.is_default_shipping,
+      false
+    ),
+    default_billing: coerceBoolean(
+      metadata.default_billing ?? row.is_default_billing,
+      false
+    ),
   }
 }
 
-const fetchMagentoCustomerWithToken = async (
-  token: string
-): Promise<any | null> => {
-  if (!MAGENTO_REST_BASE_URL) {
-    return null
+const buildMagentoCustomerPayload = (row: any, addresses: any[]) => {
+  const metadata = parseMetadata(row.metadata)
+  const mappedAddresses = addresses.map((address) =>
+    mapAddressToMagento(address, row.id)
+  )
+
+  const defaultBillingAddress = mappedAddresses.find(
+    (address) => address.default_billing
+  )
+  const defaultShippingAddress = mappedAddresses.find(
+    (address) => address.default_shipping
+  )
+
+  const attributeDefinitions = [
+    { code: "mobile_verify", fallback: "0" },
+    { code: "customer_approve", fallback: "0" },
+    { code: "sap_sync", fallback: "0" },
+    { code: "mobile_number", fallback: "" },
+    { code: "sap_customer_code", fallback: "" },
+    { code: "company_code", fallback: "" },
+    { code: "access_id", fallback: "" },
+  ]
+
+  const customAttributes = attributeDefinitions.map(({ code, fallback }) => ({
+    attribute_code: code,
+    value: sanitizeString(metadata[code], fallback),
+  }))
+
+  return {
+    id: row.id,
+    group_id: coerceNumber(metadata.group_id, 1),
+    default_billing: defaultBillingAddress
+      ? String(defaultBillingAddress.id)
+      : null,
+    default_shipping: defaultShippingAddress
+      ? String(defaultShippingAddress.id)
+      : null,
+    created_at: formatDateTime(row.created_at),
+    updated_at: formatDateTime(row.updated_at),
+    created_in: sanitizeString(metadata.created_in, "Default Store View"),
+    email: sanitizeString(row.email),
+    firstname: sanitizeString(row.first_name),
+    lastname: sanitizeString(row.last_name),
+    prefix: toNullableString(metadata.prefix),
+    gender: coerceNumber(metadata.gender, 0),
+    store_id: coerceNumber(metadata.store_id, 1),
+    website_id: coerceNumber(metadata.website_id, 1),
+    addresses: mappedAddresses,
+    disable_auto_group_change: coerceNumber(
+      metadata.disable_auto_group_change,
+      0
+    ),
+    extension_attributes: {
+      is_subscribed: coerceBoolean(metadata.is_subscribed, false),
+    },
+    custom_attributes: customAttributes,
   }
-
-  try {
-    const client = createMagentoB2CClient({
-      baseUrl: MAGENTO_REST_BASE_URL,
-      axiosConfig: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    })
-
-    const response = await client.request({
-      url: "customers/me",
-      method: "GET",
-    })
-
-    if (response?.status >= 200 && response.status < 300) {
-      return response.data
-    }
-  } catch (error: any) {
-    const status = error?.response?.status
-    if (!status || (status !== 401 && status !== 403)) {
-      console.warn(
-        "Failed to fetch Magento customer via customer token.",
-        error?.message ?? error
-      )
-    }
-  }
-
-  return null
-}
-
-const fetchMagentoCustomerByEmail = async (email: string) => {
-  if (!MAGENTO_REST_BASE_URL || !MAGENTO_ADMIN_TOKEN) {
-    return null
-  }
-
-  try {
-    const client = createMagentoB2CClient({
-      baseUrl: MAGENTO_REST_BASE_URL,
-      axiosConfig: {
-        headers: {
-          Authorization: `Bearer ${MAGENTO_ADMIN_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      },
-    })
-
-    const response = await client.request({
-      url: "customers/search",
-      method: "GET",
-      params: {
-        "searchCriteria[filter_groups][0][filters][0][field]": "email",
-        "searchCriteria[filter_groups][0][filters][0][value]": email,
-        "searchCriteria[filter_groups][0][filters][0][condition_type]": "eq",
-      },
-    })
-
-    const items = response?.data?.items
-    if (Array.isArray(items) && items.length > 0) {
-      return items[0]
-    }
-  } catch (error) {
-    console.warn("Failed to fetch Magento customer by email.", error)
-  }
-
-  return null
 }
 
 const extractToken = (req: MedusaRequest) =>
@@ -392,6 +310,10 @@ const resolveCustomerContext = async (
     if (payload?.email) {
       email = payload.email
     }
+  }
+
+  if (email) {
+    email = email.trim().toLowerCase()
   }
 
   if (!email) {
@@ -681,55 +603,16 @@ export const OPTIONS = async (req: MedusaRequest, res: MedusaResponse) => {
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
-  const tokenHeader = extractToken(req)
-  if (!tokenHeader) {
-    return res.status(401).json({ message: "Missing Authorization header." })
-  }
-
-  const token = tokenHeader.replace(/^Bearer\s+/i, "").trim()
-  if (!token.length) {
-    return res.status(401).json({ message: "Invalid Authorization header." })
-  }
-
-  let guestToken: any = null
+  let context: { customer: any }
   try {
-    guestToken = await findActiveGuestToken(token).catch(() => null)
-  } catch {
-    guestToken = null
-  }
-
-  if (!guestToken) {
-    const magentoMe = await fetchMagentoCustomerWithToken(token)
-    if (magentoMe) {
-      return res.json(magentoMe)
-    }
-  }
-
-  let email: string | null = guestToken?.email ?? null
-  if (!email) {
-    const payload = decodeJwtPayload(token)
-    if (payload?.email) {
-      email = payload.email
-    }
-  }
-
-  if (!email) {
-    return res.status(401).json({ message: "Invalid or expired token." })
+    context = await resolveCustomerContext(req)
+  } catch (error) {
+    return handleContextError(res, error)
   }
 
   try {
-    const customer = await fetchCustomerByEmail(email)
-
-    if (!customer) {
-      const magentoCustomer = await fetchMagentoCustomerByEmail(email)
-      if (magentoCustomer) {
-        return res.json(magentoCustomer)
-      }
-      return res.status(404).json({ message: "Customer not found." })
-    }
-
-    const addresses = await fetchCustomerAddresses(customer.id)
-    return res.json(buildMagentoCustomerPayload(customer, addresses))
+    const addresses = await fetchCustomerAddresses(context.customer.id)
+    return res.json(buildMagentoCustomerPayload(context.customer, addresses))
   } catch (error: any) {
     return res.status(500).json({
       message: error?.message ?? "Failed to load customer profile.",

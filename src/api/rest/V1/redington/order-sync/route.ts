@@ -1,5 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
+import { Modules } from "@medusajs/framework/utils"
+
 import { createMagentoB2CClient } from "../../../../magentoClient"
 
 const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL
@@ -159,19 +161,38 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   }
 
   const manager = req.scope.resolve("manager")
-  const orderService = req.scope.resolve("orderService")
+  const orderService = req.scope.resolve(Modules.ORDER)
   const lineItemService = req.scope.resolve("lineItemService")
+
+  const magentoIdentifier = String(
+    magentoOrder.increment_id ?? magentoOrder.entity_id
+  )
 
   const [existingOrders] = await orderService.listAndCount(
     {
-      metadata: {
-        magento_order_id: String(magentoOrder.entity_id),
-      },
+      magento_order_id: magentoIdentifier,
     },
     {
       take: 1,
     }
   )
+
+  if (!existingOrders.length) {
+    const [legacyOrders] = await orderService.listAndCount(
+      {
+        metadata: {
+          magento_order_id: magentoIdentifier,
+        },
+      },
+      {
+        take: 1,
+      }
+    )
+
+    if (legacyOrders.length) {
+      existingOrders.push(legacyOrders[0])
+    }
+  }
 
   if (existingOrders.length) {
     return res.json({
@@ -206,8 +227,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       magentoOrder.status
     ),
     payment_status: mapPaymentStatus(magentoOrder),
+    magento_order_id: magentoIdentifier,
     metadata: {
-      magento_order_id: magentoOrder.entity_id,
       magento_increment_id: magentoOrder.increment_id,
       magento_status: magentoOrder.status,
       payment_method: magentoOrder.payment?.method,
@@ -266,6 +287,6 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
   return res.json({
     order_id: medusaOrder.id,
-    magento_order_id: magentoOrder.increment_id,
+    magento_order_id: magentoIdentifier,
   })
 }

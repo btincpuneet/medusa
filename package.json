@@ -62,7 +62,8 @@
     "csv-parse": "^6.1.0",
     "dotenv": "^16.5.0",
     "mysql2": "^3.11.3",
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "typeorm": "^0.3.27"
   },
   "devDependencies": {
     "@medusajs/test-utils": "2.10.3",

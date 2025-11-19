@@ -837,6 +837,8 @@ const ProductModulePage: React.FC = () => {
   )
 }
 
-export const config = defineRouteConfig({})
+export const config = defineRouteConfig({
+  label: "Magento Product",
+})
 
 export default ProductModulePage

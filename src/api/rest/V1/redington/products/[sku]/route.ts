@@ -56,6 +56,7 @@ const buildProductResponse = (product: any, variantSku?: string) => {
 
   return {
     id: product.id,
+    variant_id: variant.id ?? null,
     sku: variant.sku ?? product.handle ?? product.id,
     name: product.title,
     attribute_set_id: 0,

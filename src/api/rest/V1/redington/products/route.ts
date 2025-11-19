@@ -82,6 +82,7 @@ const formatProduct = (product: any) => {
 
   return {
     id: product.id,
+    variant_id: variant.id ?? null,
     sku: variant.sku ?? product.handle ?? product.id,
     name: product.title,
     status: product.status ?? 1,

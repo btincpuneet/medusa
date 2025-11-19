@@ -3,7 +3,7 @@
 export default (router) => {
   router.post("/admin/import/orders", async (req, res) => {
     const manager = req.scope.resolve("manager");
-    const orderService = req.scope.resolve("orderService");
+    const orderService = req.scope.resolve("order");
     const lineItemService = req.scope.resolve("lineItemService");
 
     const payload = req.body;

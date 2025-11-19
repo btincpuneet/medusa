@@ -1,6 +1,6 @@
 import type { MedusaRequest } from "@medusajs/framework/http"
 import type { AwilixContainer } from "awilix"
-import jwt from "jsonwebtoken"
+import jwt, { type JwtPayload } from "jsonwebtoken"
 
 import {
   ensureEmailPasswordIdentity,
@@ -28,8 +28,16 @@ const unauthorizedError = () => {
 const EMAILPASS_PROVIDER = "emailpass"
 const TOKEN_TTL = process.env.CUSTOMER_TOKEN_TTL || "1d"
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret"
+export const CUSTOMER_SESSION_COOKIE =
+  process.env.CUSTOMER_SESSION_COOKIE || "redington_session"
 
-const issueCustomerToken = (email: string, customerId?: string | null) => {
+export type CustomerSessionPayload = JwtPayload & {
+  email?: string
+  actor_type?: string
+  customer_id?: string | null
+}
+
+export const issueCustomerToken = (email: string, customerId?: string | null) => {
   const normalizedEmail = (email || "").trim().toLowerCase()
   if (!normalizedEmail) {
     throw unauthorizedError()
@@ -44,6 +52,23 @@ const issueCustomerToken = (email: string, customerId?: string | null) => {
     JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   )
+}
+
+export const verifyCustomerToken = (
+  token?: string | null
+): CustomerSessionPayload | null => {
+  if (!token || typeof token !== "string") {
+    return null
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET)
+    return typeof decoded === "string"
+      ? { email: decoded }
+      : (decoded as CustomerSessionPayload)
+  } catch (_) {
+    return null
+  }
 }
 
 const authenticateWithEmailPass = async (

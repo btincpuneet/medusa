@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { listActiveBannerSliders } from "../../../../lib/pg"
+import { mapSliderToMagento } from "./mapper"
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -29,5 +30,5 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   setCors(req, res)
 
   const sliders = await listActiveBannerSliders()
-  return res.json(sliders)
+  return res.json(sliders.map(mapSliderToMagento))
 }

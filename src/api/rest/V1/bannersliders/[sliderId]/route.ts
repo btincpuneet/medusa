@@ -1,6 +1,7 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { findBannerSliderById } from "../../../../../lib/pg"
+import { mapSliderToMagento } from "../mapper"
 
 const setCors = (req: MedusaRequest, res: MedusaResponse) => {
   const origin = req.headers.origin
@@ -37,12 +38,12 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     })
   }
 
-  const slider = await findBannerSliderById(sliderId)
+  const slider = await findBannerSliderById(sliderId, { activeOnly: true })
   if (!slider) {
     return res.status(404).json({
       message: `Slider ${sliderId} not found`,
     })
   }
 
-  return res.json(slider)
+  return res.json(mapSliderToMagento(slider))
 }

@@ -19,6 +19,7 @@ let couponRuleTableInitialized = false
 let settingsTableInitialized = false
 let guestTokenTableInitialized = false
 let otpTableInitialized = false
+let customerOtpTableInitialized = false
 let homeVideoTableInitialized = false
 let orderReturnTableInitialized = false
 let productEnquiryTableInitialized = false
@@ -286,19 +287,99 @@ export async function listActiveDomainExtensionNames(): Promise<string[]> {
     .filter((value): value is string => Boolean(value))
 }
 
+const toIsoString = (value: any): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+
+  try {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
+  } catch {
+    return undefined
+  }
+}
+
+const parseBoolean = (value: any, fallback = true) => {
+  if (typeof value === "boolean") {
+    return value
+  }
+  if (value === undefined || value === null) {
+    return fallback
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+      return false
+    }
+  }
+  return Boolean(value)
+}
+
+const slugifyIdentifier = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+export type BannerRow = {
+  id: number
+  slider_id: number
+  title: string
+  image_url: string | null
+  link_url: string | null
+  sort_order: number
+  status: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 export type BannerSliderRow = {
   id: number
   identifier: string
   title: string
   status: boolean
-  banners: Array<{
-    id: number
-    title: string
-    image_url: string | null
-    link_url: string | null
-    sort_order: number
-  }>
+  created_at?: string
+  updated_at?: string
+  banners: BannerRow[]
 }
+
+const mapBannerRow = (row: any): BannerRow => ({
+  id: Number(row.id),
+  slider_id: Number(row.slider_id ?? row.sliderId ?? 0),
+  title: typeof row.title === "string" ? row.title : "",
+  image_url:
+    typeof row.image_url === "string" && row.image_url.trim().length
+      ? row.image_url
+      : null,
+  link_url:
+    typeof row.link_url === "string" && row.link_url.trim().length
+      ? row.link_url
+      : null,
+  sort_order: Number(row.sort_order ?? 0),
+  status: parseBoolean(row.status, true),
+  created_at: toIsoString(row.created_at),
+  updated_at: toIsoString(row.updated_at),
+})
+
+const mapBannerSliderRow = (row: any): BannerSliderRow => ({
+  id: Number(row.id),
+  identifier: typeof row.identifier === "string" ? row.identifier : "",
+  title: typeof row.title === "string" ? row.title : "",
+  status: parseBoolean(row.status, true),
+  created_at: toIsoString(row.created_at),
+  updated_at: toIsoString(row.updated_at),
+  banners: Array.isArray(row.banners)
+    ? row.banners.map(mapBannerRow)
+    : [],
+})
 
 export async function ensureRedingtonBannerSliderTables() {
   if (bannerSliderTableInitialized) {
@@ -473,59 +554,352 @@ export async function ensureRedingtonBannerSliderTables() {
   bannerSliderTableInitialized = true
 }
 
-export async function listActiveBannerSliders(): Promise<BannerSliderRow[]> {
-  await ensureRedingtonBannerSliderTables()
+type BannerSliderQueryOptions = {
+  sliderId?: number
+  activeOnly?: boolean
+}
 
-  const { rows } = await getPgPool().query(
-    `
+const buildBannerSliderQuery = (options: BannerSliderQueryOptions = {}) => {
+  const params: any[] = []
+  const { sliderId, activeOnly } = options
+
+  if (typeof sliderId === "number") {
+    params.push(sliderId)
+  }
+
+  const whereClauses: string[] = []
+  if (typeof sliderId === "number") {
+    whereClauses.push(`s.id = $${params.length}`)
+  }
+  if (activeOnly) {
+    whereClauses.push(`COALESCE(s.status::text, 'true') NOT IN ('false', '0')`)
+  }
+
+  const where = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""
+  const bannerStatusFilter = activeOnly
+    ? `AND COALESCE(b.status::text, 'true') NOT IN ('false', '0')`
+    : ""
+
+  const joinFilter = `
+    LEFT JOIN redington_banner_slider_link l
+      ON l.slider_id = s.id
+    LEFT JOIN redington_banner b
+      ON (
+        b.slider_id = s.id
+        OR (l.banner_id IS NOT NULL AND b.id = l.banner_id)
+      )
+      ${bannerStatusFilter}
+  `
+
+  const query = `
       SELECT s.id,
              s.identifier,
              s.title,
              s.status,
+             s.created_at,
+             s.updated_at,
              COALESCE(
                json_agg(
                  json_build_object(
                    'id', b.id,
+                   'slider_id', b.slider_id,
                    'title', b.title,
                    'image_url', b.image_url,
                    'link_url', b.link_url,
-                   'sort_order', b.sort_order
+                   'sort_order', b.sort_order,
+                   'status', b.status,
+                   'created_at', b.created_at,
+                   'updated_at', b.updated_at
                  )
                  ORDER BY b.sort_order ASC, b.id ASC
                ) FILTER (WHERE b.id IS NOT NULL),
                '[]'::json
              ) AS banners
       FROM redington_banner_slider s
-      LEFT JOIN redington_banner b
-        ON b.slider_id = s.id
-        AND COALESCE(b.status::text, 'true') NOT IN ('false', '0')
-      WHERE COALESCE(s.status::text, 'true') NOT IN ('false', '0')
+      ${joinFilter}
+      ${where}
       GROUP BY s.id
       ORDER BY s.id ASC
     `
+
+  return { query, params }
+}
+
+export async function listActiveBannerSliders(): Promise<BannerSliderRow[]> {
+  await ensureRedingtonBannerSliderTables()
+
+  const { query, params } = buildBannerSliderQuery({ activeOnly: true })
+  const { rows } = await getPgPool().query(query, params)
+
+  return rows.map(mapBannerSliderRow)
+}
+
+export async function listBannerSliders(): Promise<BannerSliderRow[]> {
+  await ensureRedingtonBannerSliderTables()
+
+  const { query, params } = buildBannerSliderQuery()
+  const { rows } = await getPgPool().query(query, params)
+
+  return rows.map(mapBannerSliderRow)
+}
+
+export async function findBannerSliderById(
+  id: number,
+  options: { activeOnly?: boolean } = {}
+): Promise<BannerSliderRow | null> {
+  if (!Number.isFinite(id)) {
+    return null
+  }
+
+  await ensureRedingtonBannerSliderTables()
+  const { query, params } = buildBannerSliderQuery({
+    sliderId: id,
+    activeOnly: options.activeOnly,
+  })
+  const { rows } = await getPgPool().query(query, params)
+
+  return rows[0] ? mapBannerSliderRow(rows[0]) : null
+}
+
+type CreateBannerSliderInput = {
+  title: string
+  identifier?: string
+  status?: boolean
+}
+
+export async function createBannerSlider(
+  input: CreateBannerSliderInput
+): Promise<BannerSliderRow> {
+  await ensureRedingtonBannerSliderTables()
+
+  const title = (input.title || "").trim()
+  if (!title.length) {
+    throw new Error("title is required")
+  }
+
+  const baseIdentifier = (input.identifier || title).trim()
+  let identifier = slugifyIdentifier(baseIdentifier)
+  if (!identifier.length) {
+    identifier = `slider-${Date.now()}`
+  }
+
+  const status = parseBoolean(input.status, true)
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_banner_slider (identifier, title, status)
+      VALUES ($1, $2, $3)
+      RETURNING id, identifier, title, status, created_at, updated_at,
+        '[]'::json AS banners
+    `,
+    [identifier, title, status]
   )
 
-  return rows.map((row) => ({
-    id: Number(row.id),
-    identifier: typeof row.identifier === "string" ? row.identifier : "",
-    title: typeof row.title === "string" ? row.title : "",
-    status: typeof row.status === "boolean" ? row.status : Boolean(row.status),
-    banners: Array.isArray(row.banners)
-      ? row.banners.map((banner: any) => ({
-          id: Number(banner.id),
-          title: typeof banner.title === "string" ? banner.title : "",
-          image_url:
-            typeof banner.image_url === "string" && banner.image_url.length
-              ? banner.image_url
-              : null,
-          link_url:
-            typeof banner.link_url === "string" && banner.link_url.length
-              ? banner.link_url
-              : null,
-          sort_order: Number(banner.sort_order ?? 0),
-        }))
-      : [],
-  }))
+  return mapBannerSliderRow(rows[0])
+}
+
+type UpdateBannerSliderInput = {
+  title?: string
+  identifier?: string
+  status?: boolean
+}
+
+export async function updateBannerSlider(
+  id: number,
+  updates: UpdateBannerSliderInput
+): Promise<BannerSliderRow> {
+  await ensureRedingtonBannerSliderTables()
+
+  const existing = await findBannerSliderById(id)
+  if (!existing) {
+    throw new Error("Banner slider not found")
+  }
+
+  const nextTitle =
+    updates.title !== undefined ? updates.title.trim() : existing.title
+  const identifierSource =
+    updates.identifier !== undefined && updates.identifier.trim().length
+      ? updates.identifier.trim()
+      : existing.identifier
+  const nextIdentifier = slugifyIdentifier(identifierSource) || existing.identifier
+  const nextStatus =
+    updates.status !== undefined ? parseBoolean(updates.status) : existing.status
+
+  await getPgPool().query(
+    `
+      UPDATE redington_banner_slider
+      SET title = $2,
+          identifier = $3,
+          status = $4,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [id, nextTitle, nextIdentifier, nextStatus]
+  )
+
+  const refreshed = await findBannerSliderById(id)
+  if (!refreshed) {
+    throw new Error("Unable to load updated slider")
+  }
+  return refreshed
+}
+
+export async function deleteBannerSlider(id: number): Promise<void> {
+  await ensureRedingtonBannerSliderTables()
+  await getPgPool().query(
+    `
+      DELETE FROM redington_banner_slider
+      WHERE id = $1
+    `,
+    [id]
+  )
+}
+
+export async function listBannersBySlider(
+  sliderId: number
+): Promise<BannerRow[]> {
+  await ensureRedingtonBannerSliderTables()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT b.id, b.slider_id, b.title, b.image_url, b.link_url, b.sort_order, b.status,
+             b.created_at, b.updated_at
+      FROM redington_banner b
+      LEFT JOIN redington_banner_slider_link l
+        ON l.banner_id = b.id
+      WHERE (l.slider_id = $1 OR b.slider_id = $1)
+      ORDER BY b.sort_order ASC, b.id ASC
+    `,
+    [sliderId]
+  )
+
+  return rows.map(mapBannerRow)
+}
+
+export async function findBannerById(id: number): Promise<BannerRow | null> {
+  await ensureRedingtonBannerSliderTables()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT id, slider_id, title, image_url, link_url, sort_order, status,
+             created_at, updated_at
+      FROM redington_banner
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  )
+
+  return rows[0] ? mapBannerRow(rows[0]) : null
+}
+
+type CreateBannerInput = {
+  title: string
+  image_url?: string | null
+  link_url?: string | null
+  sort_order?: number
+  status?: boolean
+}
+
+export async function createBanner(
+  sliderId: number,
+  input: CreateBannerInput
+): Promise<BannerRow> {
+  await ensureRedingtonBannerSliderTables()
+
+  const title = (input.title || "").trim()
+  if (!title.length) {
+    throw new Error("title is required")
+  }
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_banner (slider_id, title, image_url, link_url, sort_order, status)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, slider_id, title, image_url, link_url, sort_order, status,
+                created_at, updated_at
+    `,
+    [
+      sliderId,
+      title,
+      input.image_url || null,
+      input.link_url || null,
+      Number(input.sort_order ?? 0),
+      parseBoolean(input.status, true),
+    ]
+  )
+
+  await getPgPool().query(
+    `
+      INSERT INTO redington_banner_slider_link (slider_id, banner_id, position)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (slider_id, banner_id) DO UPDATE
+        SET position = EXCLUDED.position
+    `,
+    [sliderId, rows[0].id, Number(input.sort_order ?? 0)]
+  )
+
+  return mapBannerRow(rows[0])
+}
+
+type UpdateBannerInput = {
+  title?: string
+  image_url?: string | null
+  link_url?: string | null
+  sort_order?: number
+  status?: boolean
+}
+
+export async function updateBanner(
+  bannerId: number,
+  updates: UpdateBannerInput
+): Promise<BannerRow> {
+  await ensureRedingtonBannerSliderTables()
+
+  const existing = await findBannerById(bannerId)
+  if (!existing) {
+    throw new Error("Banner not found")
+  }
+
+  const nextTitle =
+    updates.title !== undefined ? updates.title.trim() : existing.title
+  const nextImage =
+    updates.image_url !== undefined ? updates.image_url : existing.image_url
+  const nextLink =
+    updates.link_url !== undefined ? updates.link_url : existing.link_url
+  const nextSortOrder =
+    updates.sort_order !== undefined ? Number(updates.sort_order) : existing.sort_order
+  const nextStatus =
+    updates.status !== undefined ? parseBoolean(updates.status) : existing.status
+
+  const { rows } = await getPgPool().query(
+    `
+      UPDATE redington_banner
+      SET title = $2,
+          image_url = $3,
+          link_url = $4,
+          sort_order = $5,
+          status = $6,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, slider_id, title, image_url, link_url, sort_order, status,
+                created_at, updated_at
+    `,
+    [bannerId, nextTitle, nextImage || null, nextLink || null, nextSortOrder, nextStatus]
+  )
+
+  return mapBannerRow(rows[0])
+}
+
+export async function deleteBanner(bannerId: number): Promise<void> {
+  await ensureRedingtonBannerSliderTables()
+  await getPgPool().query(
+    `
+      DELETE FROM redington_banner
+      WHERE id = $1
+    `,
+    [bannerId]
+  )
 }
 
 const normalizeCountryId = (value: unknown): string | null => {
@@ -1294,6 +1668,131 @@ export async function ensureRedingtonOtpTable() {
   `)
 
   otpTableInitialized = true
+}
+
+export async function ensureCustomerOtpTable() {
+  if (customerOtpTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS store_customer_otp (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      code_hash TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  await getPgPool().query(`
+    CREATE INDEX IF NOT EXISTS store_customer_otp_email_idx
+      ON store_customer_otp (email);
+  `)
+
+  customerOtpTableInitialized = true
+}
+
+export type CustomerOtpRow = {
+  id: number
+  email: string
+  code_hash: string
+  attempts: number
+  expires_at: string
+  consumed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const mapCustomerOtpRow = (row: any): CustomerOtpRow => ({
+  id: Number(row.id),
+  email: typeof row.email === "string" ? row.email : "",
+  code_hash: typeof row.code_hash === "string" ? row.code_hash : "",
+  attempts: Number(row.attempts ?? 0),
+  expires_at:
+    row.expires_at instanceof Date
+      ? row.expires_at.toISOString()
+      : String(row.expires_at ?? ""),
+  consumed_at:
+    row.consumed_at instanceof Date
+      ? row.consumed_at.toISOString()
+      : row.consumed_at
+      ? String(row.consumed_at)
+      : null,
+  created_at:
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : String(row.created_at ?? ""),
+  updated_at:
+    row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : String(row.updated_at ?? ""),
+})
+
+export async function upsertCustomerOtpRecord(
+  email: string,
+  codeHash: string,
+  expiresAt: string
+) {
+  await ensureCustomerOtpTable()
+  await getPgPool().query(
+    `
+      INSERT INTO store_customer_otp (email, code_hash, attempts, expires_at)
+      VALUES ($1, $2, 0, $3)
+      ON CONFLICT (email) DO UPDATE
+        SET code_hash = EXCLUDED.code_hash,
+            attempts = 0,
+            expires_at = EXCLUDED.expires_at,
+            consumed_at = NULL,
+            updated_at = NOW()
+    `,
+    [email, codeHash, expiresAt]
+  )
+}
+
+export async function fetchCustomerOtpByEmail(
+  email: string
+): Promise<CustomerOtpRow | null> {
+  await ensureCustomerOtpTable()
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM store_customer_otp
+      WHERE email = $1
+      LIMIT 1
+    `,
+    [email]
+  )
+  return rows[0] ? mapCustomerOtpRow(rows[0]) : null
+}
+
+export async function incrementCustomerOtpAttempts(id: number) {
+  await ensureCustomerOtpTable()
+  await getPgPool().query(
+    `
+      UPDATE store_customer_otp
+      SET attempts = attempts + 1,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [id]
+  )
+}
+
+export async function markCustomerOtpConsumed(id: number) {
+  await ensureCustomerOtpTable()
+  await getPgPool().query(
+    `
+      UPDATE store_customer_otp
+      SET consumed_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [id]
+  )
 }
 
 export type OtpRow = {
