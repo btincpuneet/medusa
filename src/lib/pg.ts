@@ -38,6 +38,7 @@ let bannerSliderTableInitialized = false
 let directoryCountryTableInitialized = false
 let directoryRegionTableInitialized = false
 let productDescImportTableInitialized = false
+let emailTemplateTableInitialized = false
 
 export function getPgPool(): Pool {
   if (pool) {
@@ -285,6 +286,282 @@ export async function listActiveDomainExtensionNames(): Promise<string[]> {
   return rows
     .map((row) => normalizeDomainName(row.domain_extention_name))
     .filter((value): value is string => Boolean(value))
+}
+
+export type EmailTemplateRow = {
+  id: number
+  template_code: string
+  template_subject: string | null
+  template_text: string
+  template_style: string | null
+  template_type: number
+  sender_name: string | null
+  sender_email: string | null
+  orig_template_code: string | null
+  orig_template_variables: Record<string, unknown> | null
+  is_system: boolean
+  created_at: string
+  updated_at: string
+}
+
+export async function ensureRedingtonEmailTemplateTable() {
+  if (emailTemplateTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_email_template (
+      id SERIAL PRIMARY KEY,
+      template_code TEXT NOT NULL UNIQUE,
+      template_subject TEXT,
+      template_text TEXT NOT NULL,
+      template_style TEXT,
+      template_type INTEGER NOT NULL DEFAULT 2,
+      sender_name TEXT,
+      sender_email TEXT,
+      orig_template_code TEXT,
+      orig_template_variables JSONB,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  emailTemplateTableInitialized = true
+}
+
+export function mapEmailTemplateRow(row: any): EmailTemplateRow {
+  const toIso = (value: any): string => {
+    if (value instanceof Date) {
+      return value.toISOString()
+    }
+    return String(value)
+  }
+
+  const parseJson = (value: any): Record<string, unknown> | null => {
+    if (!value) {
+      return null
+    }
+    if (typeof value === "object") {
+      return value as Record<string, unknown>
+    }
+    try {
+      return JSON.parse(String(value))
+    } catch {
+      return { raw: value } as any
+    }
+  }
+
+  return {
+    id: Number(row.id),
+    template_code: typeof row.template_code === "string" ? row.template_code : "",
+    template_subject:
+      typeof row.template_subject === "string" && row.template_subject.length
+        ? row.template_subject
+        : null,
+    template_text: typeof row.template_text === "string" ? row.template_text : "",
+    template_style:
+      typeof row.template_style === "string" && row.template_style.length
+        ? row.template_style
+        : null,
+    template_type: Number.isFinite(Number(row.template_type))
+      ? Number(row.template_type)
+      : 2,
+    sender_name:
+      typeof row.sender_name === "string" && row.sender_name.length
+        ? row.sender_name
+        : null,
+    sender_email:
+      typeof row.sender_email === "string" && row.sender_email.length
+        ? row.sender_email
+        : null,
+    orig_template_code:
+      typeof row.orig_template_code === "string" && row.orig_template_code.length
+        ? row.orig_template_code
+        : null,
+    orig_template_variables: parseJson(row.orig_template_variables),
+    is_system: typeof row.is_system === "boolean" ? row.is_system : Boolean(row.is_system),
+    created_at: toIso(row.created_at),
+    updated_at: toIso(row.updated_at),
+  }
+}
+
+type ListEmailTemplatesInput = {
+  search?: string
+  limit?: number
+  offset?: number
+}
+
+export async function listEmailTemplates({
+  search,
+  limit = 100,
+  offset = 0,
+}: ListEmailTemplatesInput) {
+  await ensureRedingtonEmailTemplateTable()
+
+  const conditions: string[] = []
+  const params: any[] = []
+
+  const normalizedSearch = (search ?? "").trim()
+  if (normalizedSearch) {
+    conditions.push(
+      `(LOWER(template_code) LIKE $${params.length + 1} OR LOWER(template_subject) LIKE $${params.length + 1})`
+    )
+    params.push(`%${normalizedSearch.toLowerCase()}%`)
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *,
+        COUNT(*) OVER() AS total_count
+      FROM redington_email_template
+      ${whereClause}
+      ORDER BY updated_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `,
+    [...params, limit, offset]
+  )
+
+  const count =
+    rows.length && rows[0].total_count !== undefined
+      ? Number(rows[0].total_count)
+      : 0
+
+  return {
+    templates: rows.map(mapEmailTemplateRow),
+    count,
+  }
+}
+
+type CreateEmailTemplateInput = {
+  template_code: string
+  template_subject: string | null
+  template_text: string
+  template_style: string | null
+  template_type: number
+  sender_name: string | null
+  sender_email: string | null
+  orig_template_code: string | null
+  orig_template_variables: Record<string, unknown> | null
+  is_system: boolean
+}
+
+export async function createEmailTemplate(input: CreateEmailTemplateInput) {
+  await ensureRedingtonEmailTemplateTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      INSERT INTO redington_email_template (
+        template_code,
+        template_subject,
+        template_text,
+        template_style,
+        template_type,
+        sender_name,
+        sender_email,
+        orig_template_code,
+        orig_template_variables,
+        is_system
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (template_code) DO UPDATE
+        SET template_subject = EXCLUDED.template_subject,
+            template_text = EXCLUDED.template_text,
+            template_style = EXCLUDED.template_style,
+            template_type = EXCLUDED.template_type,
+            sender_name = EXCLUDED.sender_name,
+            sender_email = EXCLUDED.sender_email,
+            orig_template_code = EXCLUDED.orig_template_code,
+            orig_template_variables = EXCLUDED.orig_template_variables,
+            is_system = EXCLUDED.is_system,
+            updated_at = NOW()
+      RETURNING *
+    `,
+    [
+      input.template_code,
+      input.template_subject,
+      input.template_text,
+      input.template_style,
+      input.template_type,
+      input.sender_name,
+      input.sender_email,
+      input.orig_template_code,
+      input.orig_template_variables,
+      input.is_system,
+    ]
+  )
+
+  return mapEmailTemplateRow(rows[0])
+}
+
+export async function findEmailTemplateById(id: number) {
+  await ensureRedingtonEmailTemplateTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_email_template
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  )
+
+  return rows[0] ? mapEmailTemplateRow(rows[0]) : null
+}
+
+export async function updateEmailTemplate(
+  id: number,
+  updates: Partial<Omit<CreateEmailTemplateInput, "template_code">> &
+    Partial<Pick<CreateEmailTemplateInput, "template_code">>
+) {
+  await ensureRedingtonEmailTemplateTable()
+
+  const setClauses: string[] = []
+  const params: any[] = []
+
+  const entries = Object.entries(updates) as [string, unknown][]
+  for (const [key, value] of entries) {
+    if (value === undefined) {
+      continue
+    }
+    setClauses.push(`${key} = $${params.length + 1}`)
+    params.push(value)
+  }
+
+  if (!setClauses.length) {
+    return findEmailTemplateById(id)
+  }
+
+  params.push(id)
+
+  const { rows } = await getPgPool().query(
+    `
+      UPDATE redington_email_template
+      SET ${setClauses.join(", ")},
+          updated_at = NOW()
+      WHERE id = $${params.length}
+      RETURNING *
+    `,
+    params
+  )
+
+  return rows[0] ? mapEmailTemplateRow(rows[0]) : null
+}
+
+export async function deleteEmailTemplate(id: number) {
+  await ensureRedingtonEmailTemplateTable()
+
+  await getPgPool().query(
+    `
+      DELETE FROM redington_email_template
+      WHERE id = $1
+    `,
+    [id]
+  )
 }
 
 const toIsoString = (value: any): string | undefined => {

@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 type OrderCcEmail = {
   id: number
@@ -35,6 +35,13 @@ type DomainExtension = {
   status: boolean
 }
 
+type CompanyCode = {
+  id: number
+  country_code: string
+  company_code: string
+  status: boolean
+}
+
 type DomainResponse = {
   domains?: Domain[]
   message?: string
@@ -42,7 +49,26 @@ type DomainResponse = {
 
 type DomainExtensionResponse = {
   domain_extensions?: DomainExtension[]
+  domain_extentions?: DomainExtension[]
   message?: string
+}
+
+type CompanyCodeResponse = {
+  company_codes?: CompanyCode[]
+  message?: string
+}
+
+type BrandOption = {
+  value: string
+  label: string
+  name: string
+  parent_name: string | null
+  group_name: string | null
+  path?: string[]
+}
+
+type BrandOptionResponse = {
+  brands?: BrandOption[]
 }
 
 type FilterState = {
@@ -63,7 +89,7 @@ type FormState = {
   company_code: string
   domain_id: string
   domain_extention_id: string
-  brand_ids: string
+  brand_ids: string[]
   cc_emails: string
 }
 
@@ -71,7 +97,7 @@ const INITIAL_FORM: FormState = {
   company_code: "",
   domain_id: "",
   domain_extention_id: "",
-  brand_ids: "",
+  brand_ids: [],
   cc_emails: "",
 }
 
@@ -85,6 +111,8 @@ const OrderCcEmailPage: React.FC = () => {
   const [entries, setEntries] = useState<OrderCcEmail[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [domainExtensions, setDomainExtensions] = useState<DomainExtension[]>([])
+  const [companyCodes, setCompanyCodes] = useState<CompanyCode[]>([])
+  const [brandOptions, setBrandOptions] = useState<BrandOption[]>([])
 
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [queryFilters, setQueryFilters] = useState<FilterState>(INITIAL_FILTERS)
@@ -116,6 +144,23 @@ const OrderCcEmailPage: React.FC = () => {
     [count, pageSize]
   )
 
+  const brandLabelMap = useMemo(() => {
+    const map = new Map<string, string>()
+    brandOptions.forEach((option) => {
+      const key = String(option.value ?? "").trim()
+      if (!key.length) {
+        return
+      }
+      const label =
+        option.label?.trim() ||
+        option.name?.trim() ||
+        (option.path && option.path.length ? option.path.join(" › ") : "") ||
+        key
+      map.set(key, label)
+    })
+    return map
+  }, [brandOptions])
+
   const pageStart = count ? page * pageSize + 1 : 0
   const pageEnd = count ? Math.min(count, (page + 1) * pageSize) : 0
 
@@ -143,9 +188,43 @@ const OrderCcEmailPage: React.FC = () => {
         throw new Error()
       }
       const body = (await response.json()) as DomainExtensionResponse
-      setDomainExtensions(body.domain_extensions ?? [])
+      const items =
+        body.domain_extensions ??
+        body.domain_extentions ??
+        []
+      setDomainExtensions(items)
     } catch {
       setDomainExtensions([])
+    }
+  }, [])
+
+  const loadCompanyCodes = useCallback(async () => {
+    try {
+      const response = await fetch("/admin/redington/company-codes", {
+        credentials: "include",
+      })
+      if (!response.ok) {
+        throw new Error()
+      }
+      const body = (await response.json()) as CompanyCodeResponse
+      setCompanyCodes((body.company_codes ?? []).filter((entry) => entry.status !== false))
+    } catch {
+      setCompanyCodes([])
+    }
+  }, [])
+
+  const loadBrandOptions = useCallback(async () => {
+    try {
+      const response = await fetch("/admin/redington/brand-options", {
+        credentials: "include",
+      })
+      if (!response.ok) {
+        throw new Error()
+      }
+      const body = (await response.json()) as BrandOptionResponse
+      setBrandOptions(body.brands ?? [])
+    } catch {
+      setBrandOptions([])
     }
   }, [])
 
@@ -219,7 +298,9 @@ const OrderCcEmailPage: React.FC = () => {
   useEffect(() => {
     loadDomains()
     loadDomainExtensions()
-  }, [loadDomains, loadDomainExtensions])
+    loadCompanyCodes()
+    loadBrandOptions()
+  }, [loadDomains, loadDomainExtensions, loadCompanyCodes, loadBrandOptions])
 
   useEffect(() => {
     loadEntries()
@@ -270,7 +351,7 @@ const OrderCcEmailPage: React.FC = () => {
       domain_extention_id: entry.domain_extention_id
         ? String(entry.domain_extention_id)
         : "",
-      brand_ids: entry.brand_ids.join(", "),
+      brand_ids: [...entry.brand_ids],
       cc_emails: entry.cc_emails.join(", "),
     })
     setFormError(null)
@@ -320,7 +401,7 @@ const OrderCcEmailPage: React.FC = () => {
       domain_extention_id: form.domain_extention_id
         ? Number(form.domain_extention_id)
         : null,
-      brand_ids: splitToArray(form.brand_ids),
+      brand_ids: form.brand_ids,
       cc_emails: splitToArray(form.cc_emails),
     }
 
@@ -488,13 +569,21 @@ const OrderCcEmailPage: React.FC = () => {
 
         <label style={formLabelStyle}>
           <span>Company Code</span>
-          <input
+          <select
             name="company_code"
             value={form.company_code}
             onChange={handleFormChange}
-            placeholder="e.g. 1000"
             required
-          />
+          >
+            <option value="">Select company code…</option>
+            {companyCodes.map((company) => (
+              <option key={company.id} value={company.company_code}>
+                {company.company_code}
+                {company.country_code ? ` (${company.country_code})` : ""}
+                {company.status === false ? " (inactive)" : ""}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label style={formLabelStyle}>
@@ -527,15 +616,18 @@ const OrderCcEmailPage: React.FC = () => {
           </select>
         </label>
 
-        <label style={formLabelStyle}>
-          <span>Brand IDs</span>
-          <input
-            name="brand_ids"
-            value={form.brand_ids}
-            onChange={handleFormChange}
-            placeholder="Comma separated"
-          />
-        </label>
+        <BrandMultiSelect
+          label="Brands"
+          options={brandOptions}
+          value={form.brand_ids}
+          onChange={(ids) =>
+            setForm((prev) => ({
+              ...prev,
+              brand_ids: ids,
+            }))
+          }
+          labelMap={brandLabelMap}
+        />
 
         <label style={{ ...formLabelStyle, gridColumn: "1 / -1" }}>
           <span>CC Emails</span>
@@ -622,14 +714,18 @@ const OrderCcEmailPage: React.FC = () => {
                     {entry.domain_name ?? (entry.domain_id ? `Domain #${entry.domain_id}` : "-")}
                   </td>
                   <td style={cellStyle}>
-                    {entry.domain_extention_name ??
-                      (entry.domain_extention_id
-                        ? `Extension #${entry.domain_extention_id}`
-                        : "-")}
-                  </td>
-                  <td style={{ ...cellStyle, maxWidth: "200px", wordBreak: "break-word" }}>
-                    {entry.brand_ids.length ? entry.brand_ids.join(", ") : "-"}
-                  </td>
+                {entry.domain_extention_name ??
+                  (entry.domain_extention_id
+                    ? `Extension #${entry.domain_extention_id}`
+                    : "-")}
+              </td>
+              <td style={{ ...cellStyle, maxWidth: "200px", wordBreak: "break-word" }}>
+                    {entry.brand_ids.length
+                      ? entry.brand_ids
+                          .map((id) => brandLabelMap.get(String(id)) ?? id)
+                          .join(", ")
+                      : "-"}
+              </td>
                   <td style={{ ...cellStyle, maxWidth: "240px", wordBreak: "break-word", fontFamily: "monospace" }}>
                     {entry.cc_emails.join(", ")}
                   </td>
@@ -688,6 +784,246 @@ const OrderCcEmailPage: React.FC = () => {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+type BrandMultiSelectProps = {
+  label: string
+  options: BrandOption[]
+  value: string[]
+  onChange: (ids: string[]) => void
+  labelMap: Map<string, string>
+}
+
+const BrandMultiSelect: React.FC<BrandMultiSelectProps> = ({
+  label,
+  options,
+  value,
+  onChange,
+  labelMap,
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState("")
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        event.target instanceof Node &&
+        !containerRef.current.contains(event.target)
+      ) {
+        setIsOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [])
+
+  const normalizedOptions = useMemo(() => {
+    return options.map((option) => {
+      const id = String(option.value ?? "").trim()
+      const labelText =
+        labelMap.get(id) ||
+        option.label?.trim() ||
+        option.name?.trim() ||
+        id
+      return {
+        id,
+        label: labelText,
+      }
+    })
+  }, [labelMap, options])
+
+  const filteredOptions = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) {
+      return normalizedOptions
+    }
+    return normalizedOptions.filter(
+      (option) =>
+        option.label.toLowerCase().includes(query) ||
+        option.id.toLowerCase().includes(query)
+    )
+  }, [normalizedOptions, search])
+
+  const toggleValue = (id: string) => {
+    if (value.includes(id)) {
+      onChange(value.filter((entry) => entry !== id))
+    } else {
+      onChange([...value, id])
+    }
+  }
+
+  const removeValue = (id: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    onChange(value.filter((entry) => entry !== id))
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        ...formLabelStyle,
+        gridColumn: "1 / -1",
+        position: "relative",
+        gap: 6,
+      }}
+    >
+      <span>{label}</span>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsOpen((prev) => !prev)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            setIsOpen((prev) => !prev)
+          }
+        }}
+        style={{
+          minHeight: "44px",
+          border: "1px solid #d0d5dd",
+          borderRadius: "6px",
+          padding: "6px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "6px",
+          alignItems: "center",
+          cursor: "pointer",
+          background: "#fff",
+        }}
+      >
+        {value.length === 0 ? (
+          <span style={{ color: "#888" }}>
+            {options.length ? "Select brands…" : "Loading brands…"}
+          </span>
+        ) : (
+          value.map((id) => (
+            <span
+              key={id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "2px 6px",
+                background: "#eef2ff",
+                borderRadius: "12px",
+                fontSize: "12px",
+              }}
+            >
+              {labelMap.get(id) ?? id}
+              <button
+                type="button"
+                onClick={(event) => removeValue(id, event)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  lineHeight: 1,
+                }}
+                aria-label={`Remove ${labelMap.get(id) ?? id}`}
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            background: "#fff",
+            border: "1px solid #d0d5dd",
+            borderRadius: "6px",
+            marginTop: "4px",
+            boxShadow: "0 4px 12px rgba(15, 23, 42, 0.12)",
+            zIndex: 10,
+            maxHeight: "320px",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ padding: "8px" }}>
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search brands…"
+              style={{
+                width: "100%",
+                padding: "8px",
+                borderRadius: "6px",
+                border: "1px solid #d0d5dd",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              borderTop: "1px solid #f0f0f0",
+              borderBottom: "1px solid #f0f0f0",
+            }}
+          >
+            {filteredOptions.length === 0 ? (
+              <div style={{ padding: "12px", color: "#666" }}>
+                No brands match "{search}"
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <label
+                  key={option.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    borderBottom: "1px solid #f7f7f7",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={value.includes(option.id)}
+                    onChange={() => toggleValue(option.id)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))
+            )}
+          </div>
+
+          <div style={{ padding: "8px", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+            <button type="button" onClick={() => onChange([])}>
+              Clear
+            </button>
+            <button type="button" onClick={() => setIsOpen(false)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
