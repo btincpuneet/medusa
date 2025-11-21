@@ -6,6 +6,7 @@ let domainAuthTableInitialized = false
 let domainExtentionTableInitialized = false
 let companyCodeTableInitialized = false
 let accessMappingTableInitialized = false
+let subscriptionCodeTableInitialized = false
 let currencyMappingTableInitialized = false
 let adminRoleTableInitialized = false
 let adminRoleAssignmentTableInitialized = false
@@ -1442,6 +1443,154 @@ export async function findAccessMappingByAccessId(
   )
 
   return rows[0] ? mapAccessMappingRow(rows[0]) : null
+}
+
+export type SubscriptionCodeRow = {
+  id: number
+  subscription_code: string
+  company_code: string
+  access_id: string
+  first_name: string
+  last_name: string
+  email: string
+  status: boolean
+  created_at: string
+  updated_at: string
+}
+
+export async function ensureRedingtonSubscriptionCodeTable() {
+  if (subscriptionCodeTableInitialized) {
+    return
+  }
+
+  await getPgPool().query(`
+    CREATE TABLE IF NOT EXISTS redington_subscription_code (
+      id SERIAL PRIMARY KEY,
+      subscription_code TEXT NOT NULL,
+      company_code TEXT NOT NULL,
+      access_id TEXT NOT NULL,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      status BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+
+  await getPgPool().query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS redington_subscription_code_code_unique_idx
+    ON redington_subscription_code (LOWER(subscription_code));
+  `)
+
+  await getPgPool().query(`
+    CREATE INDEX IF NOT EXISTS redington_subscription_code_email_idx
+    ON redington_subscription_code (LOWER(email));
+  `)
+
+  await getPgPool().query(`
+    CREATE INDEX IF NOT EXISTS redington_subscription_code_access_idx
+    ON redington_subscription_code (access_id);
+  `)
+
+  subscriptionCodeTableInitialized = true
+}
+
+export function mapSubscriptionCodeRow(row: any): SubscriptionCodeRow {
+  const createdAt =
+    row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : String(row.created_at)
+  const updatedAt =
+    row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : String(row.updated_at)
+
+  return {
+    id: Number(row.id),
+    subscription_code:
+      typeof row.subscription_code === "string"
+        ? row.subscription_code
+        : String(row.subscription_code || ""),
+    company_code:
+      typeof row.company_code === "string" ? row.company_code : "",
+    access_id: typeof row.access_id === "string" ? row.access_id : "",
+    first_name: typeof row.first_name === "string" ? row.first_name : "",
+    last_name: typeof row.last_name === "string" ? row.last_name : "",
+    email: typeof row.email === "string" ? row.email : "",
+    status: Boolean(row.status),
+    created_at: createdAt,
+    updated_at: updatedAt,
+  }
+}
+
+const normalizeEmail = (value: string): string =>
+  value.trim().toLowerCase()
+
+export async function findSubscriptionCodeByCode(subscriptionCode: string) {
+  await ensureRedingtonSubscriptionCodeTable()
+
+  const trimmed = subscriptionCode.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_subscription_code
+      WHERE LOWER(subscription_code) = LOWER($1)
+      LIMIT 1
+    `,
+    [trimmed]
+  )
+
+  return rows[0] ? mapSubscriptionCodeRow(rows[0]) : null
+}
+
+export async function findSubscriptionCodeById(id: number) {
+  await ensureRedingtonSubscriptionCodeTable()
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_subscription_code
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  )
+
+  return rows[0] ? mapSubscriptionCodeRow(rows[0]) : null
+}
+
+export async function findActiveSubscriptionCode(options: {
+  email: string
+  subscriptionCode: string
+}) {
+  await ensureRedingtonSubscriptionCodeTable()
+
+  const email = normalizeEmail(options.email || "")
+  const subscriptionCode = (options.subscriptionCode || "").trim()
+
+  if (!email || !subscriptionCode) {
+    return null
+  }
+
+  const { rows } = await getPgPool().query(
+    `
+      SELECT *
+      FROM redington_subscription_code
+      WHERE LOWER(email) = LOWER($1)
+        AND LOWER(subscription_code) = LOWER($2)
+        AND status = TRUE
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [email, subscriptionCode]
+  )
+
+  return rows[0] ? mapSubscriptionCodeRow(rows[0]) : null
 }
 
 export type AddBccRow = {

@@ -1,5 +1,11 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 type AccessMapping = {
   id: number
@@ -13,7 +19,6 @@ type AccessMapping = {
   domain_name?: string
   domain_extention_name?: string
   created_at: string
-  updated_at: string
 }
 
 type DomainOption = {
@@ -71,6 +76,59 @@ type FormState = {
   domain_extention_id: string
 }
 
+type CountryOption = {
+  code: string
+  name: string
+}
+
+// ISO alpha-2 country list (ASCII names)
+const COUNTRIES: CountryOption[] = [
+  { code: "AE", name: "United Arab Emirates" },
+  { code: "SA", name: "Saudi Arabia" },
+  { code: "IN", name: "India" },
+  { code: "QA", name: "Qatar" },
+  { code: "KW", name: "Kuwait" },
+  { code: "OM", name: "Oman" },
+  { code: "BH", name: "Bahrain" },
+  { code: "US", name: "United States" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "CA", name: "Canada" },
+  { code: "DE", name: "Germany" },
+  { code: "FR", name: "France" },
+  { code: "SG", name: "Singapore" },
+  { code: "MY", name: "Malaysia" },
+  { code: "ID", name: "Indonesia" },
+  { code: "PK", name: "Pakistan" },
+  { code: "BD", name: "Bangladesh" },
+  { code: "PH", name: "Philippines" },
+  { code: "VN", name: "Vietnam" },
+  { code: "TH", name: "Thailand" },
+  { code: "NP", name: "Nepal" },
+  { code: "LK", name: "Sri Lanka" },
+  { code: "AF", name: "Afghanistan" },
+  { code: "CN", name: "China" },
+  { code: "HK", name: "Hong Kong" },
+  { code: "JP", name: "Japan" },
+  { code: "KR", name: "South Korea" },
+  { code: "AU", name: "Australia" },
+  { code: "NZ", name: "New Zealand" },
+  { code: "ZA", name: "South Africa" },
+  { code: "EG", name: "Egypt" },
+  { code: "NG", name: "Nigeria" },
+  { code: "KE", name: "Kenya" },
+  { code: "TZ", name: "Tanzania" },
+  { code: "ET", name: "Ethiopia" },
+  { code: "GH", name: "Ghana" },
+  { code: "AO", name: "Angola" },
+  { code: "AR", name: "Argentina" },
+  { code: "BR", name: "Brazil" },
+  { code: "CL", name: "Chile" },
+  { code: "CO", name: "Colombia" },
+  { code: "MX", name: "Mexico" },
+  { code: "PE", name: "Peru" },
+  { code: "UY", name: "Uruguay" },
+]
+
 const createInitialForm = (): FormState => ({
   access_id: "",
   country_code: "",
@@ -94,10 +152,20 @@ const RedingtonAccessMappingsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   const sortedMappings = useMemo(() => {
     return [...mappings].sort((a, b) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      const aNum = Number(a.access_id ?? a.id ?? 0)
+      const bNum = Number(b.access_id ?? b.id ?? 0)
+
+      if (Number.isFinite(aNum) && Number.isFinite(bNum) && aNum !== bNum) {
+        return aNum - bNum
+      }
+
+      return String(a.access_id || "").localeCompare(String(b.access_id || ""))
     })
   }, [mappings])
 
@@ -116,9 +184,15 @@ const RedingtonAccessMappingsPage: React.FC = () => {
     return form.brand_ids.filter((id) => id && !known.has(id))
   }, [brandOptions, form.brand_ids])
 
+  const sortedCountries = useMemo(
+    () => [...COUNTRIES].sort((a, b) => a.name.localeCompare(b.name)),
+    []
+  )
+
   const loadMappings = useCallback(async () => {
     setIsLoading(true)
     setError(null)
+    setFlash(null)
     try {
       const response = await fetch("/admin/redington/access-mappings", {
         credentials: "include",
@@ -129,7 +203,21 @@ const RedingtonAccessMappingsPage: React.FC = () => {
       }
 
       const body = (await response.json()) as AccessMappingResponse
-      setMappings(body.access_mappings ?? [])
+      const received = body.access_mappings ?? []
+
+      // Drop any records missing an access_id and de-duplicate by access_id to
+      // avoid duplicate/blank rows in the grid.
+      const uniqueByAccess = new Map<string, AccessMapping>()
+      for (const entry of received) {
+        const key = (entry.access_id || "").trim()
+        if (!key) continue
+        if (!uniqueByAccess.has(key)) {
+          uniqueByAccess.set(key, entry)
+        }
+      }
+
+      setMappings(Array.from(uniqueByAccess.values()))
+      setSelectedIds(new Set())
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to load access mappings."
       setError(message)
@@ -168,7 +256,7 @@ const RedingtonAccessMappingsPage: React.FC = () => {
         setBrandOptions(body.brands ?? [])
       }
     } catch (err) {
-      // ignore for now, handled elsewhere
+      // ignore; errors shown separately
     }
   }, [])
 
@@ -212,13 +300,14 @@ const RedingtonAccessMappingsPage: React.FC = () => {
 
     if (!accessId || !countryCode || !companyCode || !mobileExt || !domainId || !domainExtId) {
       setError(
-        "Access ID, country code, company code, mobile extension, domain, and domain extension are required."
+        "Access ID, country, company code, mobile extension, domain, and domain extension are required."
       )
       return
     }
 
     setIsSubmitting(true)
     setError(null)
+    setFlash(null)
 
     const payload = {
       access_id: accessId,
@@ -255,7 +344,9 @@ const RedingtonAccessMappingsPage: React.FC = () => {
       }
 
       resetForm()
+      setShowForm(false)
       await loadMappings()
+      setFlash(isEdit ? "Access mapping updated." : "Access mapping created.")
     } catch (err) {
       const message =
         err instanceof Error
@@ -283,6 +374,8 @@ const RedingtonAccessMappingsPage: React.FC = () => {
         : "",
     })
     setError(null)
+    setFlash(null)
+    setShowForm(true)
   }
 
   const handleDelete = async (mapping: AccessMapping) => {
@@ -295,6 +388,7 @@ const RedingtonAccessMappingsPage: React.FC = () => {
     }
 
     setError(null)
+    setFlash(null)
 
     try {
       const response = await fetch(`/admin/redington/access-mappings/${mapping.id}`, {
@@ -312,6 +406,7 @@ const RedingtonAccessMappingsPage: React.FC = () => {
       }
 
       await loadMappings()
+      setFlash("Access mapping deleted.")
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unable to delete access mapping."
@@ -319,154 +414,200 @@ const RedingtonAccessMappingsPage: React.FC = () => {
     }
   }
 
+  const openCreate = () => {
+    resetForm()
+    setShowForm(true)
+  }
+
+  const toggleAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(mappings.map((m) => m.id)))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+
+  const toggleRow = (id: number, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.size) {
+      setError("Select at least one mapping to delete.")
+      return
+    }
+    if (!window.confirm("Delete selected access mappings? This cannot be undone.")) {
+      return
+    }
+    setError(null)
+    setFlash(null)
+
+    for (const id of selectedIds) {
+      await fetch(`/admin/redington/access-mappings/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      }).catch(() => {})
+    }
+    setSelectedIds(new Set())
+    await loadMappings()
+    setFlash("Selected access mappings deleted.")
+  }
+
   return (
-    <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div
+      style={{
+        padding: "24px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+        background: "#f4f3ef",
+        minHeight: "100%",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h1 style={{ margin: 0 }}>Access Mapping</h1>
-        <button onClick={() => { loadOptions(); loadMappings() }} disabled={isLoading}>
-          Refresh
-        </button>
+        <div>
+          <h1 style={{ margin: 0 }}>Access Mapping</h1>
+          <p style={{ margin: "6px 0 0", color: "#4b5563" }}>
+            Manage Redington access rules with bulk actions and inline editing.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => {
+              loadOptions()
+              loadMappings()
+            }}
+            disabled={isLoading}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid #d0d5dd",
+              background: "#fff",
+              color: "#0f172a",
+            }}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={openCreate}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: "none",
+              background: "#f2611a",
+              color: "#fff",
+              fontWeight: 700,
+              boxShadow: "0 6px 16px rgba(242, 97, 26, 0.35)",
+            }}
+          >
+            Add New Access Rule
+          </button>
+        </div>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
+      <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "12px",
-          alignItems: "end",
-          padding: "16px",
-          border: "1px solid #e5e5e5",
-          borderRadius: "8px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: "1px solid #e5e7eb",
           background: "#fafafa",
         }}
       >
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Access ID</span>
-          <input
-            name="access_id"
-            placeholder="e.g. 1140"
-            value={form.access_id}
-            onChange={handleFormChange}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Country Code</span>
-          <input
-            name="country_code"
-            placeholder="e.g. AE"
-            value={form.country_code}
-            onChange={handleFormChange}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Mobile Extension</span>
-          <input
-            name="mobile_ext"
-            placeholder="e.g. +971"
-            value={form.mobile_ext}
-            onChange={handleFormChange}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Company Code</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontWeight: 600 }}>Actions</label>
           <select
-            name="company_code"
-            value={form.company_code}
-            onChange={handleFormChange}
-            required
+            onChange={(event) => {
+              if (event.target.value === "delete") {
+                void handleBulkDelete()
+              }
+              event.target.value = ""
+            }}
+            defaultValue=""
+            style={{ padding: "8px 10px", borderRadius: 8 }}
           >
-            <option value="">Select company code…</option>
-            {companyCodes.map((company) => (
-              <option key={company.id} value={company.company_code}>
-                {company.company_code} ({company.country_code})
-              </option>
-            ))}
+            <option value="">Select</option>
+            <option value="delete">Delete</option>
           </select>
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Domain</span>
-          <select
-            name="domain_id"
-            value={form.domain_id}
-            onChange={handleFormChange}
-            required
-          >
-            <option value="">Select domain…</option>
-            {domains.map((domain) => (
-              <option key={domain.id} value={domain.id}>
-                {domain.domain_name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Domain Extension</span>
-          <select
-            name="domain_extention_id"
-            value={form.domain_extention_id}
-            onChange={handleFormChange}
-            required
-          >
-            <option value="">Select domain extension…</option>
-            {domainExtensions.map((extension) => (
-              <option key={extension.id} value={extension.id}>
-                {extension.domain_extention_name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <BrandMultiSelect
-          label="Brands"
-          options={brandOptions}
-          value={form.brand_ids}
-          onChange={handleBrandSelectionChange}
-          missingOptions={missingBrandOptions}
-          loading={brandOptions.length === 0 && missingBrandOptions.length === 0}
-          labelMap={brandLabelMap}
-        />
-
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : editingId ? "Update Mapping" : "Create Mapping"}
-          </button>
-          {editingId !== null && (
-            <button type="button" onClick={resetForm}>
-              Cancel Edit
-            </button>
-          )}
+          <span style={{ color: "#6b7280", fontSize: 13 }}>
+            {selectedIds.size} selected
+          </span>
         </div>
-      </form>
+        <div style={{ color: "#4b5563", fontSize: 13 }}>
+          {sortedMappings.length} records found
+        </div>
+      </div>
 
       {error && (
-        <div style={{ background: "#ffe5e5", color: "#a80000", padding: "12px", borderRadius: "8px" }}>
+        <div
+          style={{
+            background: "#fef2f2",
+            color: "#991b1b",
+            padding: "12px",
+            borderRadius: "10px",
+            border: "1px solid #fecdd3",
+          }}
+        >
           {error}
         </div>
       )}
 
-      <div style={{ overflowX: "auto", border: "1px solid #e5e5e5", borderRadius: "8px" }}>
+      {flash && (
+        <div
+          style={{
+            background: "#ecfdf3",
+            color: "#065f46",
+            padding: "12px",
+            borderRadius: "10px",
+            border: "1px solid #bbf7d0",
+          }}
+        >
+          {flash}
+        </div>
+      )}
+
+      <div
+        style={{
+          overflowX: "auto",
+          border: "1px solid #e5e5e5",
+          borderRadius: "10px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.04)",
+          background: "#fff",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ background: "#f9f9f9" }}>
+          <thead style={{ background: "#f8f6f4" }}>
             <tr>
-              <th style={headerCellStyle}>Access ID</th>
-              <th style={headerCellStyle}>Country</th>
+              <th style={{ ...headerCellStyle, width: 40 }}>
+                <input
+                  type="checkbox"
+                  aria-label="select all"
+                  checked={
+                    sortedMappings.length > 0 &&
+                    selectedIds.size === sortedMappings.length
+                  }
+                  onChange={(event) => toggleAll(event.target.checked)}
+                />
+              </th>
+              <th style={headerCellStyle}>Access Id</th>
+              <th style={headerCellStyle}>Country Code</th>
+              <th style={headerCellStyle}>Mobile Extension</th>
               <th style={headerCellStyle}>Company Code</th>
-              <th style={headerCellStyle}>Mobile Ext</th>
-              <th style={headerCellStyle}>Brands</th>
-              <th style={headerCellStyle}>Domain</th>
-              <th style={headerCellStyle}>Domain Extension</th>
-              <th style={headerCellStyle}>Created</th>
-              <th style={headerCellStyle}>Updated</th>
-              <th style={headerCellStyle}>Actions</th>
+              <th style={headerCellStyle}>Brand IDs</th>
+              <th style={headerCellStyle}>Domain Extention Name</th>
+              <th style={headerCellStyle}>Domain ID</th>
+              <th style={headerCellStyle}>Created At</th>
+              <th style={headerCellStyle}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -483,12 +624,25 @@ const RedingtonAccessMappingsPage: React.FC = () => {
                 </td>
               </tr>
             ) : (
-              sortedMappings.map((mapping) => (
-                <tr key={mapping.id}>
+              sortedMappings.map((mapping, idx) => (
+                <tr
+                  key={mapping.id}
+                  style={{
+                    background: idx % 2 === 0 ? "#fff" : "#faf7f2",
+                  }}
+                >
+                  <td style={{ ...cellStyle, width: 40 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`select ${mapping.access_id}`}
+                      checked={selectedIds.has(mapping.id)}
+                      onChange={(event) => toggleRow(mapping.id, event.target.checked)}
+                    />
+                  </td>
                   <td style={cellStyle}>{mapping.access_id ?? "-"}</td>
                   <td style={cellStyle}>{mapping.country_code}</td>
-                  <td style={cellStyle}>{mapping.company_code}</td>
                   <td style={cellStyle}>{mapping.mobile_ext}</td>
+                  <td style={cellStyle}>{mapping.company_code}</td>
                   <td style={cellStyle}>
                     {(() => {
                       const labels = (mapping.brand_ids || []).map(
@@ -497,15 +651,38 @@ const RedingtonAccessMappingsPage: React.FC = () => {
                       return labels.length ? labels.join(", ") : "-"
                     })()}
                   </td>
-                  <td style={cellStyle}>{mapping.domain_name ?? mapping.domain_id ?? "-"}</td>
                   <td style={cellStyle}>
-                    {mapping.domain_extention_name ?? mapping.domain_extention_id ?? "-"}
+                    {mapping.domain_extention_name ??
+                      mapping.domain_extention_id ??
+                      "-"}
                   </td>
+                  <td style={cellStyle}>{mapping.domain_name ?? mapping.domain_id ?? "-"}</td>
                   <td style={cellStyle}>{formatDate(mapping.created_at)}</td>
-                  <td style={cellStyle}>{formatDate(mapping.updated_at)}</td>
                   <td style={{ ...cellStyle, display: "flex", gap: "8px" }}>
-                    <button onClick={() => handleEdit(mapping)}>Edit</button>
-                    <button onClick={() => handleDelete(mapping)} style={{ color: "#a80000" }}>
+                    <button
+                      onClick={() => handleEdit(mapping)}
+                      style={{
+                        color: "#1d4ed8",
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(mapping)}
+                      style={{
+                        color: "#b91c1c",
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
                       Delete
                     </button>
                   </td>
@@ -515,6 +692,229 @@ const RedingtonAccessMappingsPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {showForm ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 40,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "min(980px, 95vw)",
+              background: "#fff",
+              borderRadius: 14,
+              boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
+              // allow dropdowns (brands) to overflow the modal card
+              overflow: "visible",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 16px",
+                borderBottom: "1px solid #e5e7eb",
+                background: "#f8f6f4",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>
+                  {editingId ? "Edit Access Mapping" : "Add Access Mapping"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm()
+                    setShowForm(false)
+                  }}
+                  style={{
+                    border: "none",
+                    background: "none",
+                    color: "#374151",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  style={{
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    color: "#111827",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                  }}
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  form="access-mapping-form"
+                  style={{
+                    border: "none",
+                    background: "#f2611a",
+                    color: "#fff",
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    boxShadow: "0 6px 16px rgba(242, 97, 26, 0.3)",
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+
+            <form
+              id="access-mapping-form"
+              onSubmit={handleSubmit}
+              style={{
+                padding: "20px",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: "14px",
+              }}
+            >
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Country <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <select
+                  name="country_code"
+                  value={form.country_code}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                >
+                  <option value="">-- Please Select --</option>
+                  {sortedCountries.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name} ({country.code})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Company Code <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <select
+                  name="company_code"
+                  value={form.company_code}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                >
+                  <option value="">-- Please Select --</option>
+                  {companyCodes.map((company) => (
+                    <option key={company.id} value={company.company_code}>
+                      {company.company_code} ({company.country_code})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Mobile Extension <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <input
+                  name="mobile_ext"
+                  placeholder="971"
+                  value={form.mobile_ext}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Access ID <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <input
+                  name="access_id"
+                  placeholder="1140"
+                  value={form.access_id}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Domain <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <select
+                  name="domain_id"
+                  value={form.domain_id}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                >
+                  <option value="">-- Please Select --</option>
+                  {domains.map((domain) => (
+                    <option key={domain.id} value={domain.id}>
+                      {domain.domain_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 600 }}>
+                  Domain Extention Name <span style={{ color: "#e11d48" }}>*</span>
+                </span>
+                <select
+                  name="domain_extention_id"
+                  value={form.domain_extention_id}
+                  onChange={handleFormChange}
+                  required
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #d1d5db" }}
+                >
+                  <option value="">-- Please Select --</option>
+                  {domainExtensions.map((extension) => (
+                    <option key={extension.id} value={extension.id}>
+                      {extension.domain_extention_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ gridColumn: "1 / -1" }}>
+                <BrandMultiSelect
+                  label="Brands"
+                  options={brandOptions}
+                  value={form.brand_ids}
+                  onChange={handleBrandSelectionChange}
+                  missingOptions={missingBrandOptions}
+                  loading={brandOptions.length === 0 && missingBrandOptions.length === 0}
+                  labelMap={brandLabelMap}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -559,246 +959,111 @@ const BrandMultiSelect: React.FC<BrandMultiSelectProps> = ({
     }))
 
     return [...baseOptions, ...missing]
-  }, [options, missingOptions])
+  }, [missingOptions, options])
 
-  const filteredOptions = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) {
-      return normalizedOptions
-    }
-
-    return normalizedOptions.filter((option) => {
-      return (
-        option.label.toLowerCase().includes(query) ||
-        option.value.toLowerCase().includes(query)
-      )
-    })
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return normalizedOptions
+    return normalizedOptions.filter((opt) => opt.label.toLowerCase().includes(q))
   }, [normalizedOptions, search])
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        event.target instanceof Node &&
-        !containerRef.current.contains(event.target)
-      ) {
+    const handler = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false)
       }
     }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false)
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    document.addEventListener("keydown", handleKeyDown)
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-      document.removeEventListener("keydown", handleKeyDown)
-    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
   }, [])
 
-  const toggleValue = (brandId: string) => {
-    if (value.includes(brandId)) {
-      onChange(value.filter((entry) => entry !== brandId))
-    } else {
-      onChange([...value, brandId])
-    }
+  const toggleValue = (id: string) => {
+    onChange(
+      value.includes(id) ? value.filter((v) => v !== id) : [...value, id]
+    )
   }
 
-  const removeValue = (brandId: string, event: React.MouseEvent) => {
-    event.stopPropagation()
-    onChange(value.filter((entry) => entry !== brandId))
-  }
-
-  const clearAll = (event: React.MouseEvent) => {
-    event.stopPropagation()
-    onChange([])
-  }
+  const selectedLabels = useMemo(() => {
+    const labels = value.map((id) => labelMap.get(id) ?? id)
+    return labels.length ? labels.join(", ") : "Select..."
+  }, [labelMap, value])
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        gridColumn: "1 / -1",
-        display: "flex",
-        flexDirection: "column",
-        gap: "4px",
-        position: "relative",
-      }}
-    >
-      <span>{label}</span>
-      <div
-        role="button"
-        tabIndex={0}
+    <div ref={containerRef} style={{ position: "relative" }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <button
+        type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault()
-            setIsOpen((prev) => !prev)
-          }
-        }}
         style={{
-          minHeight: "44px",
-          border: "1px solid #d0d5dd",
-          borderRadius: "6px",
-          padding: "6px",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "6px",
-          alignItems: "center",
-          cursor: "pointer",
+          width: "100%",
+          textAlign: "left",
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: "1px solid #d1d5db",
           background: "#fff",
         }}
       >
-        {value.length === 0 ? (
-          <span style={{ color: "#888" }}>
-            {loading ? "Loading brands…" : "Select brands…"}
-          </span>
-        ) : (
-          value.map((brandId) => (
-            <span
-              key={brandId}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-                padding: "2px 6px",
-                background: "#eef2ff",
-                borderRadius: "12px",
-                fontSize: "12px",
-              }}
-            >
-              {labelMap.get(brandId) ?? brandId}
-              <button
-                type="button"
-                onClick={(event) => removeValue(brandId, event)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  lineHeight: 1,
-                }}
-                aria-label={`Remove ${labelMap.get(brandId) ?? brandId}`}
-              >
-                ×
-              </button>
-            </span>
-          ))
-        )}
-      </div>
-
-      {isOpen && (
+        {loading ? "Loading..." : selectedLabels}
+      </button>
+      {isOpen ? (
         <div
           style={{
             position: "absolute",
+            zIndex: 50,
             top: "100%",
             left: 0,
             right: 0,
+            marginTop: 6,
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
             background: "#fff",
-            border: "1px solid #d0d5dd",
-            borderRadius: "6px",
-            marginTop: "4px",
-            boxShadow: "0 4px 12px rgba(15, 23, 42, 0.12)",
-            zIndex: 10,
-            maxHeight: "320px",
-            display: "flex",
-            flexDirection: "column",
+            maxHeight: 260,
+            overflowY: "auto",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.12)",
           }}
         >
-          <div style={{ padding: "8px" }}>
+          <div style={{ padding: 10 }}>
             <input
-              type="text"
+              placeholder="Search brands"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search brands…"
+              onChange={(e) => setSearch(e.target.value)}
               style={{
                 width: "100%",
-                padding: "8px",
-                borderRadius: "6px",
-                border: "1px solid #d0d5dd",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
               }}
             />
           </div>
-
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              borderTop: "1px solid #f0f0f0",
-              borderBottom: "1px solid #f0f0f0",
-            }}
-          >
-            {loading && filteredOptions.length === 0 ? (
-              <div style={{ padding: "12px", color: "#666" }}>Loading brands…</div>
-            ) : filteredOptions.length === 0 ? (
-              <div style={{ padding: "12px", color: "#666" }}>
-                No brands match "{search}"
-              </div>
-            ) : (
-              filteredOptions.map((option) => (
-                <label
-                  key={option.value}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    background: value.includes(option.value) ? "#eef2ff" : "#fff",
-                    borderBottom: "1px solid #f7f7f7",
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={value.includes(option.value)}
-                    onChange={() => toggleValue(option.value)}
-                  />
-                  <div>
-                    <div>{option.label}</div>
-                    {option.isMissing && (
-                      <div style={{ fontSize: "12px", color: "#999" }}>
-                        Saved from legacy data
-                      </div>
-                    )}
-                  </div>
-                </label>
-              ))
-            )}
-          </div>
-
-          <div
-            style={{
-              padding: "8px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <small style={{ color: "#666" }}>
-              {value.length} selected
-            </small>
-            <button
-              type="button"
-              onClick={clearAll}
-              disabled={!value.length}
+          {filtered.map((opt) => (
+            <label
+              key={opt.value}
               style={{
-                border: "none",
-                background: "transparent",
-                color: value.length ? "#c53030" : "#aaa",
-                cursor: value.length ? "pointer" : "not-allowed",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderTop: "1px solid #f3f4f6",
+                cursor: "pointer",
+                color: opt.isMissing ? "#b45309" : "#111827",
+                background: value.includes(opt.value) ? "#eef2ff" : "#fff",
               }}
             >
-              Clear all
-            </button>
-          </div>
+              <input
+                type="checkbox"
+                checked={value.includes(opt.value)}
+                onChange={() => toggleValue(opt.value)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+          {!filtered.length && (
+            <div style={{ padding: "10px 12px", color: "#6b7280" }}>
+              No brands found.
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -806,7 +1071,7 @@ const BrandMultiSelect: React.FC<BrandMultiSelectProps> = ({
 const headerCellStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "12px",
-  fontWeight: 600,
+  fontWeight: 700,
   borderBottom: "1px solid #e5e5e5",
 }
 
