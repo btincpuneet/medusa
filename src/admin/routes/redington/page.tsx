@@ -19,6 +19,7 @@ const MODULES: ModuleLink[] = [
   { label: "Manage Company Code", path: "/redington-company-codes", partnerAccessible: true },
   { label: "Manage Access Mapping", path: "/redington-access-mappings", partnerAccessible: true },
   { label: "Manage Currency Mapping", path: "/redington-currency-mappings" },
+  { label: "Manage Subscription Codes", path: "/redington-subscription-codes" },
   {
     label: "SAP Integration",
     path: "/redington-sap-integration",
