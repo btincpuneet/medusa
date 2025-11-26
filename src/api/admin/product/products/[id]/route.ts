@@ -8,6 +8,62 @@ function client() {
 // ====================================
 // GET – Fetch single product with relations
 // ====================================
+// export async function GET(req: MedusaRequest, res: MedusaResponse) {
+//   const { id } = req.params;
+
+//   try {
+//     const db = client();
+//     await db.connect();
+
+//     const product = await db.query("SELECT * FROM products WHERE id = $1", [id]);
+//     if (product.rows.length === 0) {
+//       return res.status(404).json({ success: false, message: "Product not found" });
+//     }
+
+//     const gallery = await db.query(
+//       "SELECT * FROM product_gallery WHERE product_id = $1",
+//       [id]
+//     );
+
+//     const categories = await db.query(
+//       `SELECT c.* FROM category c 
+//        JOIN product_categories pc ON pc.category_id = c.id
+//        WHERE pc.product_id = $1`,
+//       [id]
+//     );
+
+//     const attributes = await db.query(
+//       `SELECT pa.*, a.label, av.value 
+//        FROM product_attributes pa
+//        JOIN attributes a ON a.id = pa.attribute_id
+//        JOIN attribute_values av ON av.id = pa.attribute_value_id
+//        WHERE pa.product_id = $1`,
+//       [id]
+//     );
+
+//     await db.end();
+
+//     return res.json({
+//       success: true,
+//       product: product.rows[0],
+//       gallery: gallery.rows,
+//       categories: categories.rows,
+//       attributes: attributes.rows
+//     });
+
+//   } catch (err) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch product",
+//       error: err.message
+//     });
+//   }
+// }
+
+// ====================================
+// GET – Fetch single product with relations (fixed)
+// ====================================
+// GET – Fetch single product with relations
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { id } = req.params;
 
@@ -20,17 +76,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    const gallery = await db.query(
-      "SELECT * FROM product_gallery WHERE product_id = $1",
-      [id]
-    );
-
     const categories = await db.query(
-      `SELECT c.* FROM category c 
+      `SELECT c.id, c.name FROM category c 
        JOIN product_categories pc ON pc.category_id = c.id
        WHERE pc.product_id = $1`,
       [id]
     );
+
+    const gallery = await db.query("SELECT * FROM product_gallery WHERE product_id = $1", [id]);
 
     const attributes = await db.query(
       `SELECT pa.*, a.label, av.value 
@@ -48,6 +101,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       product: product.rows[0],
       gallery: gallery.rows,
       categories: categories.rows,
+      categoryIds: categories.rows.map((c) => c.id), // <<< THIS LINE FIXES YOUR ISSUE
       attributes: attributes.rows
     });
 
@@ -59,6 +113,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 }
+
+
 
 // ====================================
 // PUT – Update product + relations

@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import React, { useEffect, useState, useCallback } from "react"
-
+import DataTable from "react-data-table-component"
 /* --------------------------------------------
                     Types
 --------------------------------------------- */
@@ -129,7 +129,7 @@ const ProductModulePage: React.FC = () => {
       {/* Table */}
       {!loading && !error && (
         <div style={card}>
-          <table style={table}>
+          {/* <table style={table}>
             <thead>
               <tr>
                 <th style={th}>ID</th>
@@ -171,7 +171,32 @@ const ProductModulePage: React.FC = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table> */}
+          <DataTable
+  columns={[
+    { name: "ID", selector: row => row.id, sortable: true },
+    { name: "Product Code", selector: row => row.product_code },
+    { name: "Name", selector: row => row.name },
+    { name: "Short Desc", cell: row => <div dangerouslySetInnerHTML={{ __html: row.short_desc }} /> },
+    { name: "Price", selector: row => row.base_price },
+    { name: "Status", selector: row => row.status },
+    { 
+  name: "Action", 
+  cell: (row) => (
+    <button
+      onClick={() => window.location.href = `/app/redington-product-edit/${row.id}`}
+      style={editBtn}
+    >
+      Edit
+    </button>
+  )
+},
+  ]}
+  data={products}
+  pagination
+  highlightOnHover
+  striped
+/>
         </div>
       )}
     </div>

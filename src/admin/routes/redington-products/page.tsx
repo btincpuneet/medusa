@@ -19,7 +19,7 @@ const ProductsRouter: React.FC = () => {
 }
 
 export const config = defineRouteConfig({
-  label: "Redington Products",
+  // label: "Redington Products",
 })
 
 export default ProductsRouter

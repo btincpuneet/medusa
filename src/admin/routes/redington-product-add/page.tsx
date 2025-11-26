@@ -1,69 +1,138 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import React, { useEffect, useState } from "react"
 
-type Category = {
+type CategoryNode = {
   id: number
   name: string
+  parent_id: number | null
+  source: "magento" | "medusa"
+  magento_category_id: number | null
+  children: CategoryNode[]
+}
+
+
+type FormType = {
+  product_code: string
+  name: string
+  short_desc: string
+  base_price: string
+  status: string
+  categories: number[]
 }
 
 const AddProductPage: React.FC = () => {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormType>({
     product_code: "",
     name: "",
     short_desc: "",
     base_price: "",
     status: "active",
-    categories: [] as number[],
+    categories: [],
   })
-
-  const [categories, setCategories] = useState<Category[]>([])
+const [openNodes, setOpenNodes] = useState<Record<number, boolean>>({});
+  const [categories, setCategories] = useState<CategoryNode[]>([])
   const [loadingCategories, setLoadingCategories] = useState(true)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
-  /* ---------------------------------------------------
-        Fetch Categories on Page Load
-  ---------------------------------------------------- */
+  // ---------------------------------------------------
+  // Fetch Categories
+  // ---------------------------------------------------
   useEffect(() => {
     fetchCategories()
   }, [])
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch("/admin/product/category", {
-        credentials: "include",
-      })
+      const res = await fetch("/admin/product/category", { credentials: "include" })
       const data = await res.json()
-      setCategories(data.categories || [])
+      setCategories(data.categories ?? [])
     } catch (err) {
-      console.log("Category fetch failed", err)
+      console.error("Failed to load categories", err)
     } finally {
       setLoadingCategories(false)
     }
   }
 
-  /* ---------------------------------------------------
-        Form Change Handler
-  ---------------------------------------------------- */
+  // ---------------------------------------------------
+  // Form Handler
+  // ---------------------------------------------------
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target
-    setForm({ ...form, [name]: value })
+    setForm((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedIds = Array.from(e.target.selectedOptions).map((o) =>
-      Number(o.value)
-    )
-    setForm({ ...form, categories: selectedIds })
+  // ---------------------------------------------------
+  // Toggle category selection
+  // ---------------------------------------------------
+  const toggleCategory = (id: number) => {
+    setForm((prev) => ({
+      ...prev,
+      categories: prev.categories.includes(id)
+        ? prev.categories.filter((c) => c !== id)
+        : [...prev.categories, id],
+    }))
   }
 
-  /* ---------------------------------------------------
-        Submit Handler
-  ---------------------------------------------------- */
+  // ---------------------------------------------------
+  // Recursive Category Tree Node
+  // ---------------------------------------------------
+const TreeNode: React.FC<{ node: CategoryNode }> = ({ node }) => {
+  const hasChildren = node.children?.length
+  const isOpen = openNodes[node.id] || false
+
+  return (
+    <div style={{ marginLeft: node.parent_id ? 18 : 0, marginBottom: 4 }}>
+      
+      {/* Row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          cursor: hasChildren ? "pointer" : "default",
+        }}
+        onClick={() => hasChildren && toggleOpen(node.id)}
+      >
+        <div
+          style={{
+            width: 14,
+            userSelect: "none",
+            textAlign: "center",
+          }}
+        >
+          {hasChildren ? (isOpen ? "▾" : "▸") : ""}
+        </div>
+
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={form.categories.includes(node.id)}
+          onChange={() => toggleCategory(node.id)}
+          onClick={(e) => e.stopPropagation()}
+        />
+
+        <span style={{ userSelect: "none" }}>{node.name}</span>
+      </div>
+
+      {/* Children */}
+      {isOpen &&
+        hasChildren &&
+        node.children!.map((child) => (
+          <TreeNode key={child.id} node={child} />
+        ))}
+    </div>
+  )
+}
+
+
+  // ---------------------------------------------------
+  // Submit Handler
+  // ---------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -79,8 +148,7 @@ const AddProductPage: React.FC = () => {
       })
 
       const data = await res.json()
-
-      if (!data.success) throw new Error(data.message || "Failed to add product")
+      if (!data.success) throw new Error(data.message)
 
       setSuccess("Product added successfully!")
 
@@ -98,10 +166,15 @@ const AddProductPage: React.FC = () => {
       setLoading(false)
     }
   }
+const toggleOpen = (id: number) => {
+  setOpenNodes(prev => ({
+    ...prev,
+    [id]: !prev[id]
+  }));
+};
 
   return (
     <div style={wrapper}>
-      {/* Header */}
       <div style={header}>
         <h1 style={title}>Add New Product</h1>
         <button style={backBtn} onClick={() => window.history.back()}>
@@ -109,14 +182,12 @@ const AddProductPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Form */}
       <form onSubmit={handleSubmit} style={formBox}>
         {error && <p style={errorText}>{error}</p>}
         {success && <p style={successText}>{success}</p>}
 
         {/* Product Code */}
-        <div style={fieldRow}>
-          <label style={label}>Product Code</label>
+        <FormField label="Product Code">
           <input
             name="product_code"
             value={form.product_code}
@@ -124,11 +195,10 @@ const AddProductPage: React.FC = () => {
             style={input}
             required
           />
-        </div>
+        </FormField>
 
-        {/* Product Name */}
-        <div style={fieldRow}>
-          <label style={label}>Name</label>
+        {/* Name */}
+        <FormField label="Name">
           <input
             name="name"
             value={form.name}
@@ -136,22 +206,20 @@ const AddProductPage: React.FC = () => {
             style={input}
             required
           />
-        </div>
+        </FormField>
 
         {/* Short Description */}
-        <div style={fieldRow}>
-          <label style={label}>Short Description</label>
+        <FormField label="Short Description">
           <textarea
             name="short_desc"
             value={form.short_desc}
             onChange={handleChange}
             style={textarea}
           />
-        </div>
+        </FormField>
 
-        {/* Base Price */}
-        <div style={fieldRow}>
-          <label style={label}>Base Price</label>
+        {/* Price */}
+        <FormField label="Base Price">
           <input
             name="base_price"
             type="number"
@@ -160,31 +228,23 @@ const AddProductPage: React.FC = () => {
             style={input}
             required
           />
-        </div>
+        </FormField>
 
-        {/* Categories */}
-        <div style={fieldRow}>
-          <label style={label}>Categories</label>
-          <select
-            multiple
-            onChange={handleCategoryChange}
-            style={input}
-            size={5}
-          >
-            {loadingCategories && <option>Loading...</option>}
-
-            {!loadingCategories &&
-              categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
+        {/* Category Tree */}
+        <FormField label="Categories">
+          {loadingCategories ? (
+            <p>Loading...</p>
+          ) : (
+            <div style={treeBox}>
+              {categories.map((cat) => (
+                <TreeNode key={cat.id} node={cat} />
               ))}
-          </select>
-        </div>
+            </div>
+          )}
+        </FormField>
 
         {/* Status */}
-        <div style={fieldRow}>
-          <label style={label}>Status</label>
+        <FormField label="Status">
           <select
             name="status"
             value={form.status}
@@ -194,9 +254,9 @@ const AddProductPage: React.FC = () => {
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
-        </div>
+        </FormField>
 
-        {/* Submit Button */}
+        {/* Submit */}
         <button style={submitBtn} disabled={loading}>
           {loading ? "Saving..." : "Save Product"}
         </button>
@@ -205,20 +265,27 @@ const AddProductPage: React.FC = () => {
   )
 }
 
-/* --------------------------------------------
-                Styles
---------------------------------------------- */
+// --------------------------------------------
+// Reusable Form Row
+// --------------------------------------------
+const FormField: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div style={fieldRow}>
+    <label style={labelStyle}>{label}</label>
+    {children}
+  </div>
+)
 
-const wrapper = {
-  padding: "24px 0",
-  width: "100%",
+// --------------------------------------------
+// Styles
+// --------------------------------------------
+const wrapper: React.CSSProperties = {
+  padding: "24px",
   fontFamily: "Inter, sans-serif",
 }
 
 const header = {
   display: "flex",
   justifyContent: "space-between",
-  alignItems: "center",
   marginBottom: 20,
 }
 
@@ -229,33 +296,28 @@ const title = {
 
 const backBtn = {
   padding: "8px 14px",
-  background: "white",
-  border: "1px solid #d0d0d0",
+  border: "1px solid #ccc",
   borderRadius: 6,
+  background: "#fff",
   cursor: "pointer",
 }
 
 const formBox = {
-  marginLeft: "100px",
-  // maxWidth
-  background: "white",
+  background: "#fff",
   padding: 25,
   borderRadius: 10,
-  maxWidth: 1000,
   width: "100%",
   boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
 }
 
-/* LABEL LEFT — INPUT RIGHT */
 const fieldRow = {
   display: "flex",
-  flexDirection: "row",
   alignItems: "center",
   marginBottom: 18,
   gap: 20,
 }
 
-const label = {
+const labelStyle = {
   width: 180,
   fontWeight: 600,
 }
@@ -263,41 +325,40 @@ const label = {
 const input = {
   flex: 1,
   padding: "12px",
-  border: "1px solid #dcdcdc",
   borderRadius: 8,
+  border: "1px solid #ddd",
   fontSize: 15,
-  outline: "none",
 }
 
 const textarea = {
-  flex: 1,
+  ...input,
   height: 120,
-  padding: "12px",
-  border: "1px solid #dcdcdc",
-  borderRadius: 8,
-  fontSize: 15,
-  outline: "none",
 }
+
+const treeBox = {
+  border: "1px solid #ccc",
+  borderRadius: 8,
+  padding: 12,
+  maxHeight: 300,
+  overflowY: "auto",
+}
+
+const errorText = { color: "red" }
+const successText = { color: "green" }
 
 const submitBtn = {
   width: "100%",
-  padding: "12px",
+  padding: 12,
   background: "#1f72ff",
-  color: "white",
+  color: "#fff",
   border: 0,
   borderRadius: 8,
-  fontSize: 16,
   fontWeight: 600,
   cursor: "pointer",
-  marginTop: 10,
 }
 
-const errorText = { color: "red", marginBottom: 10 }
-const successText = { color: "green", marginBottom: 10 }
-
-/* Route Config */
 export const config = defineRouteConfig({
-  label: "Add Product",
+  // label: "Add Product",
   path: "/redington-product-add",
 })
 
