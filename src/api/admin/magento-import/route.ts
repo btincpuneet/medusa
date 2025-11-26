@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/medusa";
-import { Client } from 'pg';
+import { Client } from "pg";
 
 // Define types based on your Magento response
 interface MagentoProduct {
@@ -17,7 +17,7 @@ interface MagentoProduct {
     website_ids: number[];
     category_links: Array<{
       position: number;
-      category_id: string;
+      category_id: string; // Magento category ID
     }>;
     floor_special_price: string;
     featured_product: string;
@@ -53,10 +53,19 @@ interface ImportResults {
   processed: number;
   sellers: number;
   products: number;
+
+  // kept for compatibility, but not used now (no variants table)
   variants: number;
+
   attributes: number;
   attributeValues: number;
   listings: number;
+
+  // new counters
+  galleries: number;
+  categories: number;
+  productCategories: number;
+
   errors: string[];
   skipped: number;
   warnings: string[];
@@ -69,11 +78,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   try {
     console.log("🚀 Starting Magento product import...");
-    
+
     await client.connect();
 
     const magentoResponse = await fetchMagentoProducts();
-    console.log(`📦 Received ${magentoResponse.items?.length || 0} products from Magento`);
+    console.log(
+      `📦 Received ${magentoResponse.items?.length || 0} products from Magento`
+    );
 
     if (!magentoResponse.items || !Array.isArray(magentoResponse.items)) {
       return res.status(400).json({
@@ -88,8 +99,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         message: "No products found to import",
         details: {
           processed: 0,
-          total_received: 0
-        }
+          total_received: 0,
+        },
       });
     }
 
@@ -104,8 +115,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       total_received: magentoResponse.items.length,
       details: result,
     });
-
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Error importing products:", error);
     return res.status(500).json({
       success: false,
@@ -119,15 +129,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
 // Function to call Magento API
 async function fetchMagentoProducts(): Promise<MagentoResponse> {
-  const magentoUrl = 'http://local.b2c.com/rest/V1/products?searchCriteria[filter_groups][0][filters][1][field]=status&searchCriteria[filter_groups][0][filters][1][value]=1&searchCriteria[filter_groups][0][filters][0][field]=category_id&searchCriteria[filter_groups][0][filters][0][value]=42&company_code=9110&accessId=2';
-  
+  const magentoUrl =
+    "http://local.b2c.com/rest/V1/products?searchCriteria[filter_groups][0][filters][1][field]=status&searchCriteria[filter_groups][0][filters][1][value]=1&company_code=1140&accessId=6";
+
   console.log(`🌐 Fetching products from Magento: ${magentoUrl}`);
 
   const response = await fetch(magentoUrl, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'Content-Type': 'application/json',
-    }
+      "Content-Type": "application/json",
+    },
   });
 
   if (!response.ok) {
@@ -136,31 +147,38 @@ async function fetchMagentoProducts(): Promise<MagentoResponse> {
 
   const data = await response.json();
   console.log(`✅ Successfully fetched ${data.items?.length || 0} products`);
-  
+
   return data;
 }
 
 // Main processing function
-async function processAndInsertProducts(client: Client, magentoProducts: MagentoProduct[]): Promise<ImportResults> {
+async function processAndInsertProducts(
+  client: Client,
+  magentoProducts: MagentoProduct[]
+): Promise<ImportResults> {
   const results: ImportResults = {
     processed: 0,
     sellers: 0,
     products: 0,
-    variants: 0,
+    variants: 0, // not used now
     attributes: 0,
     attributeValues: 0,
     listings: 0,
+    galleries: 0,
+    categories: 0,
+    productCategories: 0,
     errors: [],
     skipped: 0,
-    warnings: []
+    warnings: [],
   };
 
   // First, ensure we have the default seller
+  let defaultSellerId: number;
   try {
-    const defaultSellerId = await ensureDefaultSeller(client);
+    defaultSellerId = await ensureDefaultSeller(client);
     results.sellers++;
     console.log(`🏪 Default seller ID: ${defaultSellerId}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Error ensuring default seller:", error);
     results.errors.push(`Default seller error: ${error.message}`);
     return results;
@@ -170,24 +188,35 @@ async function processAndInsertProducts(client: Client, magentoProducts: Magento
   const batchSize = 10;
   for (let i = 0; i < magentoProducts.length; i += batchSize) {
     const batch = magentoProducts.slice(i, i + batchSize);
-    console.log(`🔄 Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(magentoProducts.length/batchSize)}`);
-    
+    console.log(
+      `🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(
+        magentoProducts.length / batchSize
+      )}`
+    );
+
     for (const magentoProduct of batch) {
       try {
         console.log(`📝 Processing product: ${magentoProduct.sku}`);
-        
+
         // Validate required fields
         if (!magentoProduct.sku || !magentoProduct.name) {
-          results.warnings.push(`Skipping product with missing SKU or name: ${magentoProduct.sku}`);
+          results.warnings.push(
+            `Skipping product with missing SKU or name: ${magentoProduct.sku}`
+          );
           results.skipped++;
           continue;
         }
 
-        await processSingleProduct(client, magentoProduct, results);
+        await processSingleProduct(
+          client,
+          magentoProduct,
+          results,
+          defaultSellerId
+        );
         results.processed++;
-        
+
         console.log(`✅ Successfully processed: ${magentoProduct.sku}`);
-      } catch (error) {
+      } catch (error: any) {
         const errorMsg = `Error processing product ${magentoProduct.sku}: ${error.message}`;
         console.error(`❌ ${errorMsg}`);
         results.errors.push(errorMsg);
@@ -200,60 +229,70 @@ async function processAndInsertProducts(client: Client, magentoProducts: Magento
 
 // Ensure default seller exists
 async function ensureDefaultSeller(client: Client): Promise<number> {
+  const email = "default@example.com";
+
   // Check if seller already exists
   const existingSeller = await client.query(
-    `SELECT id FROM sellers WHERE email = $1`, 
-    ['default@example.com']
+    `SELECT id FROM sellers WHERE email = $1`,
+    [email]
   );
 
   if (existingSeller.rows.length > 0) {
     return existingSeller.rows[0].id;
   }
 
-  // Insert new seller
+  // IMPORTANT: password is NOT NULL in schema, so set a dummy value
+  const defaultPassword = "default_password_change_me";
+
   const result = await client.query(
-    `INSERT INTO sellers (name, email, created_at, updated_at) 
-     VALUES ($1, $2, NOW(), NOW()) 
+    `INSERT INTO sellers (name, email, password, created_at, updated_at)
+     VALUES ($1, $2, $3, NOW(), NOW())
      RETURNING id`,
-    ['Default Seller', 'default@example.com']
+    ["Default Seller", email, defaultPassword]
   );
-  
+
   return result.rows[0].id;
 }
 
-// Process a single product and its variants
+// Process a single product
 async function processSingleProduct(
-  client: Client, 
-  magentoProduct: MagentoProduct, 
-  results: ImportResults
+  client: Client,
+  magentoProduct: MagentoProduct,
+  results: ImportResults,
+  defaultSellerId: number
 ) {
-  const defaultSellerId = await ensureDefaultSeller(client);
-
   // Insert or update main product
   const productId = await upsertProduct(client, magentoProduct);
   results.products++;
 
-  // Process product variants (each Magento product is treated as a variant)
-  const variantId = await upsertProductVariant(client, magentoProduct, productId);
-  results.variants++;
+  // Process attributes (product-level)
+  await processAttributes(client, magentoProduct, productId, results);
 
-  // Process attributes and attribute values
-  await processAttributes(client, magentoProduct, variantId, results);
+  // Process product gallery images
+  await processGallery(client, magentoProduct, productId, results);
 
-  // Create product listing
-  await upsertProductListing(client, variantId, defaultSellerId, magentoProduct);
+  // Process categories and product_categories
+  await processCategories(client, magentoProduct, productId, results);
+
+  // Create/Update product listing (seller offer)
+  await upsertProductListing(client, productId, defaultSellerId, magentoProduct);
   results.listings++;
 }
 
 // Upsert product (catalog level - no seller_id)
-async function upsertProduct(client: Client, magentoProduct: MagentoProduct): Promise<number> {
-  const shortDesc = magentoProduct.custom_attributes?.find(
-    attr => attr.attribute_code === 'short_description'
-  )?.value || null;
+async function upsertProduct(
+  client: Client,
+  magentoProduct: MagentoProduct
+): Promise<number> {
+  const shortDesc =
+    magentoProduct.custom_attributes?.find(
+      (attr) => attr.attribute_code === "short_description"
+    )?.value || null;
 
-  const longDesc = magentoProduct.custom_attributes?.find(
-    attr => attr.attribute_code === 'description'
-  )?.value || null;
+  const longDesc =
+    magentoProduct.custom_attributes?.find(
+      (attr) => attr.attribute_code === "description"
+    )?.value || null;
 
   // First try to find existing product
   const existingProduct = await client.query(
@@ -272,8 +311,8 @@ async function upsertProduct(client: Client, magentoProduct: MagentoProduct): Pr
         shortDesc,
         longDesc,
         magentoProduct.price || 0,
-        magentoProduct.status === 1 ? 'active' : 'inactive',
-        magentoProduct.sku
+        magentoProduct.status === 1 ? "active" : "inactive",
+        magentoProduct.sku,
       ]
     );
     return existingProduct.rows[0].id;
@@ -289,118 +328,103 @@ async function upsertProduct(client: Client, magentoProduct: MagentoProduct): Pr
         shortDesc,
         longDesc,
         magentoProduct.price || 0,
-        magentoProduct.status === 1 ? 'active' : 'inactive'
+        magentoProduct.status === 1 ? "active" : "inactive",
       ]
     );
     return result.rows[0].id;
   }
 }
 
-// Upsert product variant
-async function upsertProductVariant(client: Client, magentoProduct: MagentoProduct, productId: number): Promise<number> {
-  const mainImage = magentoProduct.media_gallery_entries?.find(entry => 
-    entry.types.includes('image') || entry.types.includes('small_image')
-  )?.file || magentoProduct.media_gallery_entries?.[0]?.file || null;
-
-  // First try to find existing variant
-  const existingVariant = await client.query(
-    `SELECT id FROM product_variants WHERE sku = $1`,
-    [magentoProduct.sku]
-  );
-
-  if (existingVariant.rows.length > 0) {
-    // Update existing variant
-    await client.query(
-      `UPDATE product_variants 
-       SET price = $1, product_id = $2, image = $3, updated_at = NOW()
-       WHERE sku = $4`,
-      [
-        magentoProduct.price || 0,
-        productId,
-        mainImage,
-        magentoProduct.sku
-      ]
-    );
-    return existingVariant.rows[0].id;
-  } else {
-    // Insert new variant
-    const result = await client.query(
-      `INSERT INTO product_variants (product_id, sku, price, image, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NOW(), NOW())
-       RETURNING id`,
-      [
-        productId,
-        magentoProduct.sku,
-        magentoProduct.price || 0,
-        mainImage
-      ]
-    );
-    return result.rows[0].id;
-  }
-}
-
-// Process attributes and attribute values
-async function processAttributes(client: Client, magentoProduct: MagentoProduct, variantId: number, results: ImportResults) {
+/**
+ * Process attributes and attribute values at PRODUCT level
+ * product_attributes table is used instead of variant mapping
+ */
+async function processAttributes(
+  client: Client,
+  magentoProduct: MagentoProduct,
+  productId: number,
+  results: ImportResults
+) {
   if (!magentoProduct.custom_attributes) {
     return;
   }
 
-  console.log(`    Processing ${magentoProduct.custom_attributes.length} attributes for ${magentoProduct.sku}`);
+  console.log(
+    `    Processing ${magentoProduct.custom_attributes.length} attributes for ${magentoProduct.sku}`
+  );
 
   for (const customAttr of magentoProduct.custom_attributes) {
-    // Skip if value is null or undefined or empty
-    if (customAttr.value === null || customAttr.value === undefined || customAttr.value === '') {
+    // Skip if value is null / undefined / empty
+    if (
+      customAttr.value === null ||
+      customAttr.value === undefined ||
+      customAttr.value === ""
+    ) {
       continue;
     }
 
-    // Skip some system attributes we don't need to store as variants
+    // Skip system attributes we don't want to store
     const skipAttributes = [
-      'description', 
-      'short_description', 
-      'meta_title', 
-      'meta_keyword', 
-      'meta_description',
-      'category_ids',
-      'options_container',
-      'required_options',
-      'has_options',
-      'url_key',
-      'url_path'
+      "description",
+      "short_description",
+      "meta_title",
+      "meta_keyword",
+      "meta_description",
+      "category_ids",
+      "options_container",
+      "required_options",
+      "has_options",
+      "url_key",
+      "url_path",
     ];
-    
+
     if (skipAttributes.includes(customAttr.attribute_code)) {
       continue;
     }
 
     try {
       // Insert or get attribute
-      const attributeId = await upsertAttribute(client, customAttr.attribute_code);
+      const attributeId = await upsertAttribute(
+        client,
+        customAttr.attribute_code
+      );
       results.attributes++;
 
       // Insert or get attribute value
       const attributeValueId = await upsertAttributeValue(
-        client, 
-        attributeId, 
+        client,
+        attributeId,
         customAttr.value,
         customAttr.attribute_code
       );
       results.attributeValues++;
 
-      // Link attribute to variant
-      await upsertProductVariantAttribute(client, variantId, attributeId, attributeValueId);
-      
-    } catch (attrError) {
-      console.error(`    ❌ Error processing attribute ${customAttr.attribute_code}:`, attrError.message);
-      // Don't throw here - continue with other attributes
+      // Link attribute to PRODUCT (not variant)
+      await upsertProductAttribute(
+        client,
+        productId,
+        attributeId,
+        attributeValueId
+      );
+    } catch (attrError: any) {
+      console.error(
+        `    ❌ Error processing attribute ${customAttr.attribute_code}:`,
+        attrError.message
+      );
+      // Don't throw - continue with other attributes
     }
   }
 }
 
 // Upsert attribute
-async function upsertAttribute(client: Client, attributeCode: string): Promise<number> {
-  const attributeLabel = attributeCode.split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+async function upsertAttribute(
+  client: Client,
+  attributeCode: string
+): Promise<number> {
+  const attributeLabel = attributeCode
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 
   // First try to find existing attribute
   const existingAttribute = await client.query(
@@ -421,7 +445,7 @@ async function upsertAttribute(client: Client, attributeCode: string): Promise<n
       `INSERT INTO attributes (attribute_code, label, attribute_type, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
        RETURNING id`,
-      [attributeCode, attributeLabel, 'text']
+      [attributeCode, attributeLabel, "text"]
     );
     return result.rows[0].id;
   }
@@ -429,21 +453,21 @@ async function upsertAttribute(client: Client, attributeCode: string): Promise<n
 
 // Upsert attribute value
 async function upsertAttributeValue(
-  client: Client, 
-  attributeId: number, 
-  value: any, 
+  client: Client,
+  attributeId: number,
+  value: any,
   attributeCode: string
 ): Promise<number> {
   // Handle different value types
-  let processedValue = value;
-  let meta = null;
+  let processedValue: string = value;
+  let meta: any = null;
 
   if (Array.isArray(value)) {
-    processedValue = value.join(',');
-    meta = JSON.stringify({ original_type: 'array', values: value });
-  } else if (typeof value === 'object' && value !== null) {
+    processedValue = value.join(",");
+    meta = { original_type: "array", values: value };
+  } else if (typeof value === "object" && value !== null) {
     processedValue = JSON.stringify(value);
-    meta = JSON.stringify({ original_type: 'object' });
+    meta = { original_type: "object" };
   } else {
     processedValue = String(value);
   }
@@ -467,70 +491,300 @@ async function upsertAttributeValue(
       `INSERT INTO attribute_values (attribute_id, value, meta, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
        RETURNING id`,
-      [attributeId, processedValue, meta]
+      [attributeId, processedValue, meta ? JSON.stringify(meta) : null]
     );
     return result.rows[0].id;
   }
 }
 
-// Upsert product variant attribute link
-async function upsertProductVariantAttribute(
-  client: Client, 
-  variantId: number, 
-  attributeId: number, 
+// Upsert product attribute link (product_attributes)
+async function upsertProductAttribute(
+  client: Client,
+  productId: number,
+  attributeId: number,
   attributeValueId: number
 ) {
   // First check if the link already exists
   const existingLink = await client.query(
-    `SELECT id FROM product_variant_attributes 
-     WHERE variant_id = $1 AND attribute_id = $2 AND attribute_value_id = $3`,
-    [variantId, attributeId, attributeValueId]
+    `SELECT id FROM product_attributes 
+     WHERE product_id = $1 AND attribute_id = $2 AND attribute_value_id = $3`,
+    [productId, attributeId, attributeValueId]
   );
 
   if (existingLink.rows.length === 0) {
     // Insert new link
     await client.query(
-      `INSERT INTO product_variant_attributes (variant_id, attribute_id, attribute_value_id, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())`,
-      [variantId, attributeId, attributeValueId]
+      `INSERT INTO product_attributes (product_id, attribute_id, attribute_value_id)
+       VALUES ($1, $2, $3)`,
+      [productId, attributeId, attributeValueId]
     );
   }
 }
 
-// Upsert product listing (seller offer)
-async function upsertProductListing(client: Client, variantId: number, sellerId: number, magentoProduct: MagentoProduct) {
+/**
+ * Process product gallery images -> product_gallery
+ */
+async function processGallery(
+  client: Client,
+  magentoProduct: MagentoProduct,
+  productId: number,
+  results: ImportResults
+) {
+  const entries = magentoProduct.media_gallery_entries || [];
+  if (!entries.length) {
+    return;
+  }
+
+  console.log(
+    `    Processing ${entries.length} gallery images for ${magentoProduct.sku}`
+  );
+
+  for (const entry of entries) {
+    try {
+      await upsertProductGallery(client, productId, entry);
+      results.galleries++;
+    } catch (err: any) {
+      console.error(
+        `    ❌ Error processing gallery image for ${magentoProduct.sku}:`,
+        err.message
+      );
+    }
+  }
+}
+
+function mapMagentoImageType(entry: MagentoProduct["media_gallery_entries"][0]) {
+  const types = entry.types || [];
+
+  if (types.includes("image")) {
+    return "main";
+  }
+
+  if (types.includes("small_image") || types.includes("thumbnail")) {
+    return "thumbnail";
+  }
+
+  // Could be swatch_image or others – treat as gallery
+  return "gallery";
+}
+
+// Upsert into product_gallery
+async function upsertProductGallery(
+  client: Client,
+  productId: number,
+  entry: MagentoProduct["media_gallery_entries"][0]
+) {
+  const imageType = mapMagentoImageType(entry);
+  const imagePath = entry.file; // e.g. "/m/y/my-image.jpg"
+
+  // Check if image already exists for this product
+  const existing = await client.query(
+    `SELECT id FROM product_gallery WHERE product_id = $1 AND image = $2`,
+    [productId, imagePath]
+  );
+
+  if (existing.rows.length > 0) {
+    // Update label / type if needed
+    await client.query(
+      `UPDATE product_gallery
+       SET image_type = $1, label = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [imageType, entry.label, existing.rows[0].id]
+    );
+  } else {
+    await client.query(
+      `INSERT INTO product_gallery (product_id, image_type, label, image, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+      [productId, imageType, entry.label, imagePath]
+    );
+  }
+}
+
+/**
+ * Process categories & product_categories
+ */
+// async function processCategories(
+//   client: Client,
+//   magentoProduct: MagentoProduct,
+//   productId: number,
+//   results: ImportResults
+// ) {
+//   const categoryLinks = magentoProduct.extension_attributes?.category_links || [];
+//   if (!categoryLinks.length) {
+//     return;
+//   }
+
+//   console.log(
+//     `    Processing ${categoryLinks.length} categories for ${magentoProduct.sku}`
+//   );
+
+//   for (const link of categoryLinks) {
+//     const magentoCategoryId = link.category_id;
+//     if (!magentoCategoryId) continue;
+
+//     try {
+//       const categoryId = await upsertCategory(client, magentoCategoryId);
+//       results.categories++;
+
+//       await upsertProductCategory(client, productId, categoryId);
+//       results.productCategories++;
+//     } catch (err: any) {
+//       console.error(
+//         `    ❌ Error processing category ${link.category_id} for ${magentoProduct.sku}:`,
+//         err.message
+//       );
+//     }
+//   }
+// }
+
+// Upsert into category table
+// async function upsertCategory(
+//   client: Client,
+//   magentoCategoryId: string
+// ): Promise<number> {
+//   // Simple mapping – you can later replace with real Magento category data
+//   const name = `Magento Category ${magentoCategoryId}`;
+//   const urlSlug = `magento-category-${magentoCategoryId}`;
+
+//   // Check by url (unique) or name
+//   const existing = await client.query(
+//     `SELECT id FROM category WHERE url = $1 OR name = $2`,
+//     [urlSlug, name]
+//   );
+
+//   if (existing.rows.length > 0) {
+//     return existing.rows[0].id;
+//   }
+
+//   const result = await client.query(
+//     `INSERT INTO category (name, url, description, status, created_at, updated_at)
+//      VALUES ($1, $2, $3, TRUE, NOW(), NOW())
+//      RETURNING id`,
+//     [name, urlSlug, `Auto-created from Magento category ID ${magentoCategoryId}`]
+//   );
+
+//   return result.rows[0].id;
+// }
+
+/**
+ * Process categories & product_categories - using magento_category_id
+ */
+async function processCategories(
+  client: Client,
+  magentoProduct: MagentoProduct,
+  productId: number,
+  results: ImportResults
+) {
+  const categoryLinks = magentoProduct.extension_attributes?.category_links || [];
+  if (!categoryLinks.length) {
+    return;
+  }
+
+  console.log(
+    `    Processing ${categoryLinks.length} categories for ${magentoProduct.sku}`
+  );
+
+  for (const link of categoryLinks) {
+    const magentoCategoryId = parseInt(link.category_id);
+    if (!magentoCategoryId || isNaN(magentoCategoryId)) continue;
+
+    try {
+      // Look up the real category by magento_category_id
+      const categoryId = await findCategoryByMagentoId(client, magentoCategoryId);
+      
+      if (categoryId) {
+        await upsertProductCategory(client, productId, categoryId);
+        results.productCategories++;
+        console.log(`    ✅ Linked product ${magentoProduct.sku} to category ID: ${categoryId} (Magento ID: ${magentoCategoryId})`);
+      } else {
+        results.warnings.push(
+          `Category not found for Magento category ID: ${magentoCategoryId} in product ${magentoProduct.sku}`
+        );
+        console.warn(`    ⚠️ Category ${magentoCategoryId} not found for product ${magentoProduct.sku}`);
+      }
+    } catch (err: any) {
+      console.error(
+        `    ❌ Error processing category ${link.category_id} for ${magentoProduct.sku}:`,
+        err.message
+      );
+    }
+  }
+}
+
+// Find category by Magento ID using magento_category_id column
+async function findCategoryByMagentoId(client: Client, magentoId: number): Promise<number | null> {
+  try {
+    const result = await client.query(
+      `SELECT id FROM category WHERE magento_category_id = $1`,
+      [magentoId]
+    );
+
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+
+    console.log(`    🔍 Could not find category for Magento ID: ${magentoId}`);
+    return null;
+  } catch (error: any) {
+    console.error(`    ❌ Error finding category for Magento ID ${magentoId}:`, error.message);
+    return null;
+  }
+}
+
+
+// Upsert into product_categories
+async function upsertProductCategory(
+  client: Client,
+  productId: number,
+  categoryId: number
+) {
+  const existing = await client.query(
+    `SELECT id FROM product_categories WHERE product_id = $1 AND category_id = $2`,
+    [productId, categoryId]
+  );
+
+  if (existing.rows.length === 0) {
+    await client.query(
+      `INSERT INTO product_categories (product_id, category_id, created_at)
+       VALUES ($1, $2, NOW())`,
+      [productId, categoryId]
+    );
+  }
+}
+
+/**
+ * Upsert product listing (seller offer) – now uses product_id
+ * (No variants table)
+ */
+async function upsertProductListing(
+  client: Client,
+  productId: number,
+  sellerId: number,
+  magentoProduct: MagentoProduct
+) {
   // First try to find existing listing
   const existingListing = await client.query(
-    `SELECT id FROM product_listings WHERE seller_id = $1 AND variant_id = $2`,
-    [sellerId, variantId]
+    `SELECT id FROM product_listings WHERE seller_id = $1 AND product_id = $2`,
+    [sellerId, productId]
   );
+
+  const price = magentoProduct.price || 0;
+  const status = magentoProduct.status === 1 ? "active" : "inactive";
+  const defaultStock = 10; // you can replace with real stock if you fetch it
 
   if (existingListing.rows.length > 0) {
     // Update existing listing
     await client.query(
       `UPDATE product_listings 
        SET price = $1, stock = $2, status = $3, updated_at = NOW()
-       WHERE seller_id = $4 AND variant_id = $5`,
-      [
-        magentoProduct.price || 0,
-        10, // Default stock
-        magentoProduct.status === 1 ? 'active' : 'inactive',
-        sellerId,
-        variantId
-      ]
+       WHERE seller_id = $4 AND product_id = $5`,
+      [price, defaultStock, status, sellerId, productId]
     );
   } else {
     // Insert new listing
     await client.query(
-      `INSERT INTO product_listings (seller_id, variant_id, price, stock, status, created_at, updated_at)
+      `INSERT INTO product_listings (seller_id, product_id, price, stock, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-      [
-        sellerId,
-        variantId,
-        magentoProduct.price || 0,
-        10, // Default stock
-        magentoProduct.status === 1 ? 'active' : 'inactive'
-      ]
+      [sellerId, productId, price, defaultStock, status]
     );
   }
 }
