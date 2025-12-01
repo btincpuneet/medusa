@@ -233,7 +233,7 @@ async function ensureDefaultSeller(client: Client): Promise<number> {
 
   // Check if seller already exists
   const existingSeller = await client.query(
-    `SELECT id FROM sellers WHERE email = $1`,
+    `SELECT id FROM mp_sellers WHERE email = $1`,
     [email]
   );
 
@@ -245,7 +245,7 @@ async function ensureDefaultSeller(client: Client): Promise<number> {
   const defaultPassword = "default_password_change_me";
 
   const result = await client.query(
-    `INSERT INTO sellers (name, email, password, created_at, updated_at)
+    `INSERT INTO mp_sellers (name, email, password, created_at, updated_at)
      VALUES ($1, $2, $3, NOW(), NOW())
      RETURNING id`,
     ["Default Seller", email, defaultPassword]
@@ -296,14 +296,14 @@ async function upsertProduct(
 
   // First try to find existing product
   const existingProduct = await client.query(
-    `SELECT id FROM products WHERE product_code = $1`,
+    `SELECT id FROM mp_products WHERE product_code = $1`,
     [magentoProduct.sku]
   );
 
   if (existingProduct.rows.length > 0) {
     // Update existing product
     await client.query(
-      `UPDATE products 
+      `UPDATE mp_products 
        SET name = $1, short_desc = $2, long_desc = $3, base_price = $4, status = $5, updated_at = NOW()
        WHERE product_code = $6`,
       [
@@ -319,7 +319,7 @@ async function upsertProduct(
   } else {
     // Insert new product
     const result = await client.query(
-      `INSERT INTO products (product_code, name, short_desc, long_desc, base_price, status, created_at, updated_at)
+      `INSERT INTO mp_products (product_code, name, short_desc, long_desc, base_price, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        RETURNING id`,
       [
@@ -428,21 +428,21 @@ async function upsertAttribute(
 
   // First try to find existing attribute
   const existingAttribute = await client.query(
-    `SELECT id FROM attributes WHERE attribute_code = $1`,
+    `SELECT id FROM mp_attributes WHERE attribute_code = $1`,
     [attributeCode]
   );
 
   if (existingAttribute.rows.length > 0) {
     // Update existing attribute
     await client.query(
-      `UPDATE attributes SET label = $1, updated_at = NOW() WHERE attribute_code = $2`,
+      `UPDATE mp_attributes SET label = $1, updated_at = NOW() WHERE attribute_code = $2`,
       [attributeLabel, attributeCode]
     );
     return existingAttribute.rows[0].id;
   } else {
     // Insert new attribute
     const result = await client.query(
-      `INSERT INTO attributes (attribute_code, label, attribute_type, created_at, updated_at)
+      `INSERT INTO mp_attributes (attribute_code, label, attribute_type, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
        RETURNING id`,
       [attributeCode, attributeLabel, "text"]
@@ -479,7 +479,7 @@ async function upsertAttributeValue(
 
   // First try to find existing attribute value
   const existingValue = await client.query(
-    `SELECT id FROM attribute_values WHERE attribute_id = $1 AND value = $2`,
+    `SELECT id FROM mp_attribute_values WHERE attribute_id = $1 AND value = $2`,
     [attributeId, processedValue]
   );
 
@@ -488,7 +488,7 @@ async function upsertAttributeValue(
   } else {
     // Insert new attribute value
     const result = await client.query(
-      `INSERT INTO attribute_values (attribute_id, value, meta, created_at, updated_at)
+      `INSERT INTO mp_attribute_values (attribute_id, value, meta, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
        RETURNING id`,
       [attributeId, processedValue, meta ? JSON.stringify(meta) : null]
@@ -506,7 +506,7 @@ async function upsertProductAttribute(
 ) {
   // First check if the link already exists
   const existingLink = await client.query(
-    `SELECT id FROM product_attributes 
+    `SELECT id FROM mp_product_attributes 
      WHERE product_id = $1 AND attribute_id = $2 AND attribute_value_id = $3`,
     [productId, attributeId, attributeValueId]
   );
@@ -514,7 +514,7 @@ async function upsertProductAttribute(
   if (existingLink.rows.length === 0) {
     // Insert new link
     await client.query(
-      `INSERT INTO product_attributes (product_id, attribute_id, attribute_value_id)
+      `INSERT INTO mp_product_attributes (product_id, attribute_id, attribute_value_id)
        VALUES ($1, $2, $3)`,
       [productId, attributeId, attributeValueId]
     );
@@ -578,21 +578,21 @@ async function upsertProductGallery(
 
   // Check if image already exists for this product
   const existing = await client.query(
-    `SELECT id FROM product_gallery WHERE product_id = $1 AND image = $2`,
+    `SELECT id FROM mp_product_gallery WHERE product_id = $1 AND image = $2`,
     [productId, imagePath]
   );
 
   if (existing.rows.length > 0) {
     // Update label / type if needed
     await client.query(
-      `UPDATE product_gallery
+      `UPDATE mp_product_gallery
        SET image_type = $1, label = $2, updated_at = NOW()
        WHERE id = $3`,
       [imageType, entry.label, existing.rows[0].id]
     );
   } else {
     await client.query(
-      `INSERT INTO product_gallery (product_id, image_type, label, image, created_at, updated_at)
+      `INSERT INTO mp_product_gallery (product_id, image_type, label, image, created_at, updated_at)
        VALUES ($1, $2, $3, $4, NOW(), NOW())`,
       [productId, imageType, entry.label, imagePath]
     );
@@ -714,7 +714,7 @@ async function processCategories(
 async function findCategoryByMagentoId(client: Client, magentoId: number): Promise<number | null> {
   try {
     const result = await client.query(
-      `SELECT id FROM category WHERE magento_category_id = $1`,
+      `SELECT id FROM mp_category WHERE magento_category_id = $1`,
       [magentoId]
     );
 
@@ -738,13 +738,13 @@ async function upsertProductCategory(
   categoryId: number
 ) {
   const existing = await client.query(
-    `SELECT id FROM product_categories WHERE product_id = $1 AND category_id = $2`,
+    `SELECT id FROM mp_product_categories WHERE product_id = $1 AND category_id = $2`,
     [productId, categoryId]
   );
 
   if (existing.rows.length === 0) {
     await client.query(
-      `INSERT INTO product_categories (product_id, category_id, created_at)
+      `INSERT INTO mp_product_categories (product_id, category_id, created_at)
        VALUES ($1, $2, NOW())`,
       [productId, categoryId]
     );
@@ -763,7 +763,7 @@ async function upsertProductListing(
 ) {
   // First try to find existing listing
   const existingListing = await client.query(
-    `SELECT id FROM product_listings WHERE seller_id = $1 AND product_id = $2`,
+    `SELECT id FROM mp_product_listings WHERE seller_id = $1 AND product_id = $2`,
     [sellerId, productId]
   );
 
@@ -774,7 +774,7 @@ async function upsertProductListing(
   if (existingListing.rows.length > 0) {
     // Update existing listing
     await client.query(
-      `UPDATE product_listings 
+      `UPDATE mp_product_listings 
        SET price = $1, stock = $2, status = $3, updated_at = NOW()
        WHERE seller_id = $4 AND product_id = $5`,
       [price, defaultStock, status, sellerId, productId]
@@ -782,7 +782,7 @@ async function upsertProductListing(
   } else {
     // Insert new listing
     await client.query(
-      `INSERT INTO product_listings (seller_id, product_id, price, stock, status, created_at, updated_at)
+      `INSERT INTO mp_product_listings (seller_id, product_id, price, stock, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
       [sellerId, productId, price, defaultStock, status]
     );

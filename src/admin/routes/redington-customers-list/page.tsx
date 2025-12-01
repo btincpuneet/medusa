@@ -42,7 +42,7 @@ const CustomerModulePage: React.FC = () => {
     setError(null)
 
     try {
-      const url = new URL(`/admin/customers`, window.location.origin)
+      const url = new URL(`/admin/mp/redington-customers`, window.location.origin)
 
       if (query.trim() !== "") {
         url.searchParams.set("q", query.trim())
@@ -151,17 +151,17 @@ const CustomerModulePage: React.FC = () => {
                 selector: row => new Date(row.created_at).toLocaleDateString(),
                 sortable: true 
               },
-              // {
-              //   name: "Action",
-              //   cell: row => (
-              //     <button
-              //       onClick={() => window.location.href = `/app/customer-edit/${row.id}`}
-              //       style={editBtn}
-              //     >
-              //       Edit
-              //     </button>
-              //   ),
-              // },
+              {
+                name: "Action",
+                cell: row => (
+                  <button
+                    onClick={() => window.location.href = `/app/redington-customers-edit/${row.id}`}
+                    style={editBtn}
+                  >
+                    Edit
+                  </button>
+                ),
+              },
             ]}
             data={customers}
             pagination
@@ -241,7 +241,7 @@ const editBtn = {
 
 /* Sidebar Label */
 export const config = defineRouteConfig({
-  label: "Customers",
+  label: "Magento Customers",
 })
 
 export default CustomerModulePage

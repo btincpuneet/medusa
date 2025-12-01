@@ -34,7 +34,7 @@ const AddCategoryPage: React.FC = () => {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch("/admin/product/category", { credentials: "include" })
+      const res = await fetch("/admin/mp/product/category", { credentials: "include" })
       const data = await res.json()
       
       if (data.success) {
@@ -146,7 +146,7 @@ const AddCategoryPage: React.FC = () => {
         throw new Error("Category name is required")
       }
 
-      const res = await fetch("/admin/product/category", {
+      const res = await fetch("/admin/mp/product/category", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
