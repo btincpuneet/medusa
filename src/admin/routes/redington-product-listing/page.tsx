@@ -40,7 +40,7 @@ const ProductModulePage: React.FC = () => {
     setError(null)
 
     try {
-      const url = new URL(`/admin/product/products`, window.location.origin)
+      const url = new URL(`/admin/mp/product/products`, window.location.origin)
 
       if (query.trim() !== "") {
         url.searchParams.set("q", query.trim())
@@ -129,49 +129,7 @@ const ProductModulePage: React.FC = () => {
       {/* Table */}
       {!loading && !error && (
         <div style={card}>
-          {/* <table style={table}>
-            <thead>
-              <tr>
-                <th style={th}>ID</th>
-                <th style={th}>Product Code</th>
-                <th style={th}>Name</th>
-                <th style={th}>Short Description</th>
-                <th style={th}>Price</th>
-                <th style={th}>Status</th>
-                <th style={th}>Action</th>
-              </tr>
-            </thead>
 
-            <tbody>
-              {products.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={noData}>
-                    No products found
-                  </td>
-                </tr>
-              )}
-
-              {products.map((p) => (
-                <tr key={p.id} style={row}>
-                  <td style={td}>{p.id}</td>
-                  <td style={td}>{p.product_code}</td>
-                  <td style={td}>{p.name}</td>
-                  <td style={td}>
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: p.short_desc || "",
-                      }}
-                    />
-                  </td>
-                  <td style={td}>{p.base_price}</td>
-                  <td style={td}>{p.status}</td>
-                  <td style={td}>
-                    <button style={editBtn}>Edit</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table> */}
           <DataTable
   columns={[
     { name: "ID", selector: row => row.id, sortable: true },

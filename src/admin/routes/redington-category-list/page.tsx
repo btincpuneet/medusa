@@ -42,7 +42,7 @@ const CategoryModulePage: React.FC = () => {
     setError(null)
 
     try {
-      const url = new URL(`/admin/product/category`, window.location.origin)
+      const url = new URL(`/admin/mp/product/category`, window.location.origin)
 
       if (query.trim() !== "") {
         url.searchParams.set("q", query.trim())
@@ -154,20 +154,20 @@ const CategoryModulePage: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          {/* <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => window.location.href = `/app/redington-category-edit/${node.id}`}
               style={editBtn}
             >
               Edit
             </button>
-            <button
+            {/* <button
               onClick={() => handleViewProducts(node.id)}
               style={viewProductsBtn}
             >
               View Products
-            </button>
-          </div> */}
+            </button> */}
+          </div>
         </div>
 
         {/* Children */}

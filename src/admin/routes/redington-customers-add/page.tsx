@@ -1,33 +1,167 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 
 type CustomerForm = {
   first_name: string
   last_name: string
+  name_prefix: string
+  gender: string
+  dob: string
   email: string
   phone: string
-  // Remove account_status from form since Medusa doesn't accept it
+  phone_country_code: string
+  country_id: string
+  region_id: string
+}
+
+type Country = {
+  id: string
+  name: string
+}
+
+type Region = {
+  id: string
+  name: string
+  code: string
 }
 
 const AddCustomerPage: React.FC = () => {
-  const [form, setForm] = useState<CustomerForm>({
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone: "",
-    // Remove account_status from state
-  })
+const [form, setForm] = useState<CustomerForm>({
+  first_name: "",
+  last_name: "",
+  name_prefix: "",
+  gender: "",
+  dob: "",
+  email: "",
+  phone: "",
+  phone_country_code: "",
+  country_id: "",
+  region_id: ""
+})
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  
+  // New states for countries and regions
+  const [countries, setCountries] = useState<Country[]>([])
+  const [regions, setRegions] = useState<Region[]>([])
+  const [loadingCountries, setLoadingCountries] = useState(false)
+  const [loadingRegions, setLoadingRegions] = useState(false)
+  const [phonePrefix, setPhonePrefix] = useState("");
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
+
+  const countryPhoneCodes: Record<string, string> = {
+  "1": "+971",  // UAE
+  "2": "+254",  // Kenya
+  "3": "+966",  // Saudi Arabia
+};
+
+
+
+  // Fetch countries on component mount
+  useEffect(() => {
+    fetchCountries()
+  }, [])
+
+  // Fetch regions when country changes
+  useEffect(() => {
+    if (form.country_id) {
+      fetchRegions(form.country_id)
+    } else {
+      setRegions([])
+      setForm(prev => ({ ...prev, region_id: "" }))
+    }
+  }, [form.country_id])
+
+  const fetchCountries = async () => {
+    try {
+      setLoadingCountries(true)
+      const res = await fetch("/admin/mp/countries", {
+        method: "GET",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      })
+
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to fetch countries")
+      }
+
+      if (data.success) {
+        setCountries(data.countries || [])
+      }
+    } catch (err: any) {
+      console.error("Error fetching countries:", err)
+      setError("Failed to load countries")
+    } finally {
+      setLoadingCountries(false)
+    }
   }
+
+  const fetchRegions = async (countryId: string) => {
+    try {
+      setLoadingRegions(true)
+      const res = await fetch(`/admin/mp/regions/${countryId}`, {
+        method: "GET",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      })
+
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to fetch regions")
+      }
+
+      if (data.success) {
+        setRegions(data.regions || [])
+      }
+    } catch (err: any) {
+      console.error("Error fetching regions:", err)
+      setError("Failed to load regions")
+      setRegions([])
+    } finally {
+      setLoadingRegions(false)
+    }
+  }
+
+  // const handleChange = (
+  //   e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  // ) => {
+  //   const { name, value } = e.target
+  //   setForm((prev) => ({ ...prev, [name]: value }))
+  // }
+//   const handleChange = (
+//   e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+// ) => {
+//   const { name, value } = e.target;
+
+//   setForm(prev => ({ ...prev, [name]: value }));
+
+//   if (name === "country_id") {
+//     setPhonePrefix(countryPhoneCodes[value] || "");
+//   }
+// };
+
+const handleChange = (
+  e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+) => {
+  const { name, value } = e.target;
+
+  // normal update
+  setForm(prev => ({ ...prev, [name]: value }));
+
+  // when country changes
+  if (name === "country_id") {
+    const code = countryPhoneCodes[value] || "";
+    setPhonePrefix(code);
+    setForm(prev => ({ ...prev, phone_country_code: code }));  // <-- safe update
+  }
+};
+
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,6 +169,21 @@ const AddCustomerPage: React.FC = () => {
     setError("")
     setSuccess("")
 
+      const today = new Date();
+  const minAgeDate = new Date();
+  minAgeDate.setFullYear(today.getFullYear() - 13);
+
+  if (new Date(form.dob) > today) {
+    setError("Date of birth cannot be in the future");
+    setLoading(false);
+    return;
+  }
+
+  if (new Date(form.dob) > minAgeDate) {
+    setError("Customer must be at least 13 years old");
+    setLoading(false);
+    return;
+  }
     if (!form.email || !form.first_name || !form.last_name) {
       setError("Email, first name, and last name are required")
       setLoading(false)
@@ -42,11 +191,11 @@ const AddCustomerPage: React.FC = () => {
     }
 
     try {
-      const res = await fetch("/admin/customers", {
+      const res = await fetch("/admin/mp/redington-customers", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form), // Only sends fields that Medusa expects
+        body: JSON.stringify(form),
       })
 
       const data = await res.json()
@@ -60,24 +209,36 @@ const AddCustomerPage: React.FC = () => {
       }
 
       setSuccess("Customer added successfully!")
-      setForm({
-        first_name: "",
-        last_name: "",
-        email: "",
-        phone: "",
-      })
+setForm({
+  first_name: "",
+  last_name: "",
+  name_prefix: "",
+  gender: "",
+  dob: "",
+  email: "",
+  phone: "",
+  phone_country_code:"+00",
+  country_id: "",
+  region_id: ""
+})
+
+      setRegions([])
     } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
+const today = new Date();
+const minAgeDate = new Date();
+minAgeDate.setFullYear(today.getFullYear() - 13);
+
+const maxDob = minAgeDate.toISOString().split("T")[0];
 
   return (
     <div style={wrapper}>
       <div style={header}>
         <h1 style={title}>Add New Customer</h1>
-
         <button style={backBtn} onClick={() => window.history.back()}>
           ← Back
         </button>
@@ -98,7 +259,22 @@ const AddCustomerPage: React.FC = () => {
         <div style={requiredNote}>
           Fields marked with <span style={requiredStar}>*</span> are required
         </div>
+        {/* Name Puffix */}
 
+<FormField label="Name Prefix" required>
+  <select
+    name="name_prefix"
+    value={form.name_prefix}
+    onChange={handleChange}
+    style={select}
+    required
+  >
+    <option value="">Select Title</option>
+<option value="Mr.">Mr.</option>
+<option value="Ms.">Ms.</option>
+<option value="Mrs.">Mrs.</option>
+  </select>
+</FormField>
         {/* First Name */}
         <FormField label="First Name" required>
           <input
@@ -123,6 +299,82 @@ const AddCustomerPage: React.FC = () => {
           />
         </FormField>
 
+        {/* Country Selection */}
+        <FormField label="Country" required>
+          <select
+            name="country_id"
+            value={form.country_id}
+            onChange={handleChange}
+            style={select}
+            required
+          >
+            <option value="">Select a country</option>
+            {loadingCountries ? (
+              <option value="" disabled>Loading countries...</option>
+            ) : (
+              countries.map(country => (
+                <option key={country.id} value={country.id}>
+                  {country.name}
+                </option>
+              ))
+            )}
+          </select>
+        </FormField>
+
+        {/* Region Selection */}
+        <FormField label="Region" required>
+          <select
+            name="region_id"
+            value={form.region_id}
+            onChange={handleChange}
+            style={select}
+            required
+            disabled={!form.country_id || loadingRegions}
+          >
+            <option value="">Select a region</option>
+            {loadingRegions ? (
+              <option value="" disabled>Loading regions...</option>
+            ) : regions.length > 0 ? (
+              regions.map(region => (
+                <option key={region.id} value={region.id}>
+                  {region.name}
+                </option>
+              ))
+            ) : (
+              <option value="" disabled>
+                {form.country_id ? "No regions available" : "Select a country first"}
+              </option>
+            )}
+          </select>
+        </FormField>
+
+        <FormField label="Phone">
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <span style={{
+      padding: "12px",
+      border: "1px solid #ddd",
+      borderRadius: 8,
+      background: "#f9fafb",
+      minWidth: 70,
+      textAlign: "center",
+      fontSize: 15
+    }}>
+      {phonePrefix || "+00"}
+    </span>
+
+    <input
+      name="phone"
+      value={form.phone}
+      onChange={handleChange}
+      style={{ ...input, flex: 1 }}
+      placeholder="Enter phone number"
+    />
+  </div>
+</FormField>
+
+
+
+
         {/* Email */}
         <FormField label="Email" required>
           <input
@@ -136,18 +388,41 @@ const AddCustomerPage: React.FC = () => {
           />
         </FormField>
 
-        {/* Phone */}
-        <FormField label="Phone">
-          <input
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            style={input}
-            placeholder="Enter phone number (optional)"
-          />
-        </FormField>
 
-        {/* Status Info Note - Removed the select but kept info */}
+
+
+
+{/* Gender */}
+<FormField label="Gender" required>
+  <select
+    name="gender"
+    value={form.gender}
+    onChange={handleChange}
+    style={select}
+    required
+  >
+    <option value="">Select gender</option>
+    <option value="male">Male</option>
+    <option value="female">Female</option>
+    <option value="other">Other</option>
+  </select>
+</FormField>
+
+{/* Date of Birth */}
+<FormField label="Date of Birth">
+  <input
+    type="date"
+    name="dob"
+    value={form.dob}
+    onChange={handleChange}
+    style={input}
+      max={maxDob}
+  min="1900-01-01"
+  />
+</FormField>
+
+
+        {/* Status Info Note */}
         <div style={infoNote}>
           <strong>Note:</strong> All new customers will be created with "Active" status by default.
           You can change the status later in the customer management section.
@@ -155,7 +430,8 @@ const AddCustomerPage: React.FC = () => {
 
         <button 
           style={submitBtn} 
-          disabled={loading || !form.email || !form.first_name || !form.last_name}
+          disabled={loading || !form.email || !form.first_name || !form.last_name || !form.country_id || !form.region_id || !form.gender}
+
           type="submit"
         >
           {loading ? "Saving..." : "Save Customer"}
@@ -183,12 +459,11 @@ const FormField: React.FC<{
   </div>
 )
 
-/* ------------------------------ Styles ------------------------------ */
+/* ------------------------------ Updated Styles ------------------------------ */
 const wrapper = { 
   padding: "24px", 
   fontFamily: "Inter, sans-serif",
-  Width: "100%",
-  // margin: "0 auto"
+  width: "100%",
 }
 
 const header = { 
@@ -241,6 +516,16 @@ const input = {
   border: "1px solid #ddd",
   fontSize: 15,
   minWidth: 300
+}
+
+const select = {
+  flex: 1,
+  padding: "12px",
+  borderRadius: 8,
+  border: "1px solid #ddd",
+  fontSize: 15,
+  minWidth: 300,
+  background: "white"
 }
 
 const requiredNote = {
