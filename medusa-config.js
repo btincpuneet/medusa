@@ -49,6 +49,27 @@ module.exports = defineConfig({
     },
   },
 
+<<<<<<< Updated upstream
+=======
+  admin: {
+    path: "/app",
+    backendUrl: process.env.MEDUSA_BASE_URL || "http://localhost:9000",
+    // Only override HMR fields; avoid spreading base config to prevent duplicate plugins during merge
+    vite: (config) => ({
+      server: {
+        ...(config.server ?? {}),
+        hmr: {
+          ...(config.server?.hmr ?? {}),
+          host: HMR_HOST ?? config.server?.hmr?.host,
+          port: HMR_PORT ?? config.server?.hmr?.port,
+          clientPort: HMR_CLIENT_PORT ?? config.server?.hmr?.clientPort,
+          protocol: HMR_PROTOCOL ?? config.server?.hmr?.protocol,
+        },
+      },
+    }),
+  },
+
+>>>>>>> Stashed changes
   // ---- v2 Modules (minimal set for products/prices/inventory) ----
   modules: {
     product: {
