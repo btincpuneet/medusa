@@ -1,0 +1,45 @@
+NetSkope Creditionals
+PrashantK.Bluethink@redingtongroup.com
+nmDr8bjAq!R#
+
+
+Magento admin panel permission 
+sudo chmod -R 777 /var/www/html/B2C/var/log
+
+
+
+SSH Creditionals
+ssh prashantk@172.20.36.125
+admin7@
+
+SSH Tunneling for Local System Not Client
+ssh -L 9000:localhost:9000 prashantk@172.20.36.125
+
+add .env inside 
+HOST=0.0.0.0 for all Network Access
+
+Check Node Server running or killing 
+ps aux | grep node
+pkill -f node
+
+Kill Node Server In VSCODE
+lsof -i :9000
+kill -9 PID
+
+curl http://172.20.36.125:9000/app
+
+Medusa Admin panel Creditional
+Prashantkaushik700@gmail.com
+Pkaushik0178@
+
+ajsinghnpv@gmail.com
+879597
+
+Postgresql
+DB NAME-redington
+password-admin@123
+
+DB LIST or Switch Commands
+
+
+
