@@ -5,6 +5,13 @@ const { loadEnv, defineConfig } = require("@medusajs/framework/utils")
 // Load .env.[NODE_ENV] and .env
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
+const {
+  HMR_HOST,
+  HMR_PORT,
+  HMR_CLIENT_PORT,
+  HMR_PROTOCOL,
+} = process.env
+
 const buildCors = (...values) => {
   const origins = values
     .filter(Boolean)
@@ -49,8 +56,6 @@ module.exports = defineConfig({
     },
   },
 
-<<<<<<< Updated upstream
-=======
   admin: {
     path: "/app",
     backendUrl: process.env.MEDUSA_BASE_URL || "http://localhost:9000",
@@ -69,7 +74,6 @@ module.exports = defineConfig({
     }),
   },
 
->>>>>>> Stashed changes
   // ---- v2 Modules (minimal set for products/prices/inventory) ----
   modules: {
     product: {
