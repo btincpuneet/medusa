@@ -600,73 +600,7 @@ async function upsertProductGallery(
 }
 
 /**
- * Process categories & product_categories
- */
-// async function processCategories(
-//   client: Client,
-//   magentoProduct: MagentoProduct,
-//   productId: number,
-//   results: ImportResults
-// ) {
-//   const categoryLinks = magentoProduct.extension_attributes?.category_links || [];
-//   if (!categoryLinks.length) {
-//     return;
-//   }
-
-//   console.log(
-//     `    Processing ${categoryLinks.length} categories for ${magentoProduct.sku}`
-//   );
-
-//   for (const link of categoryLinks) {
-//     const magentoCategoryId = link.category_id;
-//     if (!magentoCategoryId) continue;
-
-//     try {
-//       const categoryId = await upsertCategory(client, magentoCategoryId);
-//       results.categories++;
-
-//       await upsertProductCategory(client, productId, categoryId);
-//       results.productCategories++;
-//     } catch (err: any) {
-//       console.error(
-//         `    ❌ Error processing category ${link.category_id} for ${magentoProduct.sku}:`,
-//         err.message
-//       );
-//     }
-//   }
-// }
-
-// Upsert into category table
-// async function upsertCategory(
-//   client: Client,
-//   magentoCategoryId: string
-// ): Promise<number> {
-//   // Simple mapping – you can later replace with real Magento category data
-//   const name = `Magento Category ${magentoCategoryId}`;
-//   const urlSlug = `magento-category-${magentoCategoryId}`;
-
-//   // Check by url (unique) or name
-//   const existing = await client.query(
-//     `SELECT id FROM category WHERE url = $1 OR name = $2`,
-//     [urlSlug, name]
-//   );
-
-//   if (existing.rows.length > 0) {
-//     return existing.rows[0].id;
-//   }
-
-//   const result = await client.query(
-//     `INSERT INTO category (name, url, description, status, created_at, updated_at)
-//      VALUES ($1, $2, $3, TRUE, NOW(), NOW())
-//      RETURNING id`,
-//     [name, urlSlug, `Auto-created from Magento category ID ${magentoCategoryId}`]
-//   );
-
-//   return result.rows[0].id;
-// }
-
-/**
- * Process categories & product_categories - using magento_category_id
+ * Process categories & product_categories - verify category exists, then store magento_category_id
  */
 async function processCategories(
   client: Client,
@@ -688,13 +622,14 @@ async function processCategories(
     if (!magentoCategoryId || isNaN(magentoCategoryId)) continue;
 
     try {
-      // Look up the real category by magento_category_id
-      const categoryId = await findCategoryByMagentoId(client, magentoCategoryId);
+      // Check if this Magento category exists in our mp_categories table
+      const categoryExists = await checkCategoryExistsByMagentoId(client, magentoCategoryId);
       
-      if (categoryId) {
-        await upsertProductCategory(client, productId, categoryId);
+      if (categoryExists) {
+        // Category exists, store the magento_category_id in mp_product_categories
+        await upsertProductCategory(client, productId, magentoCategoryId);
         results.productCategories++;
-        console.log(`    ✅ Linked product ${magentoProduct.sku} to category ID: ${categoryId} (Magento ID: ${magentoCategoryId})`);
+        console.log(`    ✅ Linked product ${magentoProduct.sku} to Magento category ID: ${magentoCategoryId}`);
       } else {
         results.warnings.push(
           `Category not found for Magento category ID: ${magentoCategoryId} in product ${magentoProduct.sku}`
@@ -710,46 +645,42 @@ async function processCategories(
   }
 }
 
-// Find category by Magento ID using magento_category_id column
-async function findCategoryByMagentoId(client: Client, magentoId: number): Promise<number | null> {
+// Check if category exists in mp_categories by magento_category_id
+async function checkCategoryExistsByMagentoId(client: Client, magentoCategoryId: number): Promise<boolean> {
   try {
     const result = await client.query(
-      `SELECT id FROM mp_category WHERE magento_category_id = $1`,
-      [magentoId]
+      `SELECT id FROM mp_categories WHERE magento_category_id = $1`,
+      [magentoCategoryId]
     );
 
-    if (result.rows.length > 0) {
-      return result.rows[0].id;
-    }
-
-    console.log(`    🔍 Could not find category for Magento ID: ${magentoId}`);
-    return null;
+    return result.rows.length > 0;
   } catch (error: any) {
-    console.error(`    ❌ Error finding category for Magento ID ${magentoId}:`, error.message);
-    return null;
+    console.error(`    ❌ Error checking category for Magento ID ${magentoCategoryId}:`, error.message);
+    return false;
   }
 }
 
-
-// Upsert into product_categories
+// Upsert into product_categories - store magento_category_id in category_id column
 async function upsertProductCategory(
   client: Client,
   productId: number,
-  categoryId: number
+  magentoCategoryId: number  // This is the same value from magento_category_id column
 ) {
   const existing = await client.query(
-    `SELECT id FROM mp_product_categories WHERE product_id = $1 AND category_id = $2`,
-    [productId, categoryId]
+    `SELECT id FROM mp_product_categories 
+     WHERE product_id = $1 AND category_id = $2`,
+    [productId, magentoCategoryId]
   );
 
   if (existing.rows.length === 0) {
     await client.query(
       `INSERT INTO mp_product_categories (product_id, category_id, created_at)
        VALUES ($1, $2, NOW())`,
-      [productId, categoryId]
+      [productId, magentoCategoryId]
     );
   }
 }
+
 
 /**
  * Upsert product listing (seller offer) – now uses product_id

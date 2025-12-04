@@ -243,12 +243,12 @@ const OrderDetailsPage: React.FC = () => {
           <button style={backBtn} onClick={() => window.history.back()}>
             ← Back to Orders
           </button>
-          <button 
+          {/* <button 
             style={printBtn}
             onClick={() => window.print()}
           >
             📄 Print
-          </button>
+          </button> */}
         </div>
       </div>
 
