@@ -177,7 +177,7 @@ async function generateUniqueSlug(client: Client, name: string, magentoId: numbe
   // Check if slug already exists
   while (true) {
     const existing = await client.query(
-      `SELECT id FROM category WHERE url = $1`,
+      `SELECT id FROM mp_categories WHERE url = $1`,
       [slug]
     );
 
@@ -209,7 +209,7 @@ async function upsertCategory(
 
   // Try to find existing category by magento_category_id
   const existingCategory = await client.query(
-    `SELECT id FROM category WHERE magento_category_id = $1`,
+    `SELECT id FROM mp_categories WHERE magento_category_id = $1`,
     [magentoCategory.id]
   );
 
@@ -220,7 +220,7 @@ async function upsertCategory(
     // Update existing category
     const categoryId = existingCategory.rows[0].id;
     await client.query(
-      `UPDATE category 
+      `UPDATE mp_categories
        SET name = $1, url = $2, parent_id = $3, description = $4, status = $5, 
            position = $6, level = $7, magento_category_id = $8, updated_at = NOW()
        WHERE id = $9`,
@@ -240,7 +240,7 @@ async function upsertCategory(
   } else {
     // Insert new category
     const result = await client.query(
-      `INSERT INTO category (name, url, parent_id, description, status, position, level, magento_category_id, created_at, updated_at)
+      `INSERT INTO mp_categories (name, url, parent_id, description, status, position, level, magento_category_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        RETURNING id`,
       [

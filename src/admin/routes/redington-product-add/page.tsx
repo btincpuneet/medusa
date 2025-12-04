@@ -16,6 +16,8 @@ type FormType = {
   short_desc: string
   base_price: string
   status: string
+  attribute_set: string
+  visibility: string 
   categories: number[]
 }
 
@@ -23,19 +25,32 @@ type Attribute = {
   id: number
   label: string
   attribute_type: string
-  values?: Array<{ id: number; label: string }>
+  values?: AttributeValueOption[]
   required?: boolean
 }
 
 type AttributeValue = {
   attribute_id: number
-  text_value?: string
-  decimal_value?: number
-  integer_value?: number
-  boolean_value?: boolean
-  attribute_value_id?: number
+  text_value?: string | null
+  decimal_value?: number | null
+  integer_value?: number | null
+  boolean_value?: boolean | null
+  attribute_value_id?: number | null
   attribute_value_ids?: number[]
-  media_path?: string
+  media_path?: string | null
+  date_value?: string | null // For date attributes
+}
+
+type AttributeValueOption = {
+  id: number
+  value: string  
+  label: string  
+}
+
+type AttributeSets = {
+  id: number
+  name: string
+  values?: Array<{ id: number; label: string }>
 }
 
 type GalleryImage = {
@@ -52,6 +67,8 @@ const AddProductPage: React.FC = () => {
     short_desc: "",
     base_price: "",
     status: "active",
+    attribute_set: "",
+    visibility: "catalogsearch",
     categories: [],
   })
   
@@ -66,6 +83,7 @@ const AddProductPage: React.FC = () => {
   const [gallery, setGallery] = useState<GalleryImage[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [filteredCategories, setFilteredCategories] = useState<CategoryNode[]>([])
+  const [attributeSets, setAttributeSets] = useState<AttributeSets[]>([])
 
   // Filter categories based on search term
   useEffect(() => {
@@ -94,45 +112,66 @@ const AddProductPage: React.FC = () => {
     setFilteredCategories(filterCategories(categories, searchTerm))
   }, [categories, searchTerm])
 
-  // Fetch category attributes when categories change
   useEffect(() => {
-    if (form.categories.length === 0) {
+    if (!form.attribute_set) {
       setAttributes([])
       setAttributeValues({})
       return
     }
 
-    const lastSelected = form.categories[form.categories.length - 1]
-    fetchCategoryAttributes(lastSelected)
-  }, [form.categories])
+    fetchAttributeSetAttributes(form.attribute_set)
+  }, [form.attribute_set])
 
-  const fetchCategoryAttributes = async (categoryId: number) => {
+  const fetchAttributeSetAttributes = async (attributeSetId: string) => {
     try {
       setError("")
-      const res = await fetch(`/admin/mp/product/product-category/${categoryId}/attributes`, {
+      const res = await fetch(`/admin/mp/attribute-sets/${attributeSetId}/attributes`, {
         credentials: "include",
       })
 
       if (!res.ok) throw new Error(`Failed to fetch attributes: ${res.status}`)
       
       const data = await res.json()
-      setAttributes(data.attributes || [])
+      
+      const mappedAttributes: Attribute[] = data.attributes.map((attr: any) => ({
+        id: attr.id,
+        label: attr.label,
+        attribute_type: attr.attribute_type,
+        values: attr.values?.map((v: any) => ({
+          id: v.id,
+          label: v.value,
+          value: v.value
+        })),
+        required: attr.is_required
+      }))
+      
+      setAttributes(mappedAttributes)
 
-      // Initialize attribute values
+      // Initialize attribute values correctly
       const initialValues: Record<number, AttributeValue> = {}
-      data.attributes?.forEach((attr: Attribute) => {
-        initialValues[attr.id] = { attribute_id: attr.id }
+      mappedAttributes.forEach((attr: Attribute) => {
+        initialValues[attr.id] = { 
+          attribute_id: attr.id,
+          text_value: null,
+          decimal_value: null,
+          integer_value: null,
+          boolean_value: null,
+          attribute_value_id: null,
+          attribute_value_ids: [],
+          media_path: null,
+          date_value: null
+        }
       })
       setAttributeValues(initialValues)
     } catch (error) {
-      console.error("Failed to load category attributes", error)
-      setError("Failed to load category attributes")
+      console.error("Failed to load attribute set attributes", error)
+      setError("Failed to load attribute set attributes")
     }
   }
-
-  // Fetch Categories
+  
   useEffect(() => {
     fetchCategories()
+    fetchAttributeSets()
   }, [])
 
   const fetchCategories = async () => {
@@ -156,19 +195,72 @@ const AddProductPage: React.FC = () => {
     }
   }
 
+  const fetchAttributeSets = async () => {
+    try {
+      const res = await fetch("/admin/mp/attribute-sets", { 
+        credentials: "include" 
+      })
+      
+      if (!res.ok) throw new Error(`Failed to fetch attribute sets: ${res.status}`)
+      
+      const data = await res.json()
+      setAttributeSets(data.attributesets ?? [])
+    } catch (err: any) {
+      console.error("Failed to load attribute sets", err)
+      setError("Failed to load attribute sets")
+    }
+  }
+
   const renderAttributeInput = (attr: Attribute) => {
     const value = attributeValues[attr.id] || {}
+    const hasPredefinedValues = attr.values && attr.values.length > 0
+
+    // Debug logging to see what's happening
+    console.log(`Rendering attribute: ${attr.label} (${attr.attribute_type})`, {
+      hasPredefinedValues,
+      values: attr.values,
+      currentValue: value
+    })
 
     switch (attr.attribute_type) {
       case "text":
+        // Text attributes should always be text inputs unless they have predefined values
+        if (hasPredefinedValues) {
+          return (
+            <select
+              style={input}
+              value={value.attribute_value_id || ""}
+              onChange={(e) =>
+                updateAttribute(attr.id, {
+                  attribute_value_id: e.target.value ? Number(e.target.value) : null,
+                  text_value: null
+                })
+              }
+              required={attr.required}
+            >
+              <option value="">Select</option>
+              {attr.values?.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label || v.value}
+                </option>
+              ))}
+            </select>
+          )
+        }
+
         return (
           <input
             style={input}
+            type="text"
             value={value.text_value || ""}
             onChange={(e) =>
-              updateAttribute(attr.id, { text_value: e.target.value })
+              updateAttribute(attr.id, { 
+                text_value: e.target.value,
+                attribute_value_id: null
+              })
             }
             required={attr.required}
+            placeholder={`Enter ${attr.label}`}
           />
         )
 
@@ -178,28 +270,55 @@ const AddProductPage: React.FC = () => {
             style={textarea}
             value={value.text_value || ""}
             onChange={(e) =>
-              updateAttribute(attr.id, { text_value: e.target.value })
+              updateAttribute(attr.id, { 
+                text_value: e.target.value,
+                attribute_value_id: null
+              })
             }
             required={attr.required}
+            placeholder={`Enter ${attr.label}`}
+            rows={4}
           />
         )
 
       case "integer":
-      case "decimal":
         return (
           <input
             style={input}
             type="number"
-            step={attr.attribute_type === "decimal" ? "0.01" : "1"}
-            value={value.decimal_value || value.integer_value || ""}
-            onChange={(e) =>
+            step="1"
+            value={value.integer_value !== null && value.integer_value !== undefined ? value.integer_value : ""}
+            onChange={(e) => {
+              const val = e.target.value;
               updateAttribute(attr.id, {
-                [attr.attribute_type === "integer"
-                  ? "integer_value"
-                  : "decimal_value"]: e.target.value,
+                integer_value: val ? parseInt(val, 10) : null,
+                text_value: null,
+                attribute_value_id: null
               })
-            }
+            }}
             required={attr.required}
+            placeholder={`Enter ${attr.label}`}
+          />
+        )
+
+      case "decimal":
+      case "price": // Handle price as decimal
+        return (
+          <input
+            style={input}
+            type="number"
+            step="0.01"
+            value={value.decimal_value !== null && value.decimal_value !== undefined ? value.decimal_value : ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              updateAttribute(attr.id, {
+                decimal_value: val ? parseFloat(val) : null,
+                text_value: null,
+                attribute_value_id: null
+              })
+            }}
+            required={attr.required}
+            placeholder={`Enter ${attr.label}`}
           />
         )
 
@@ -207,12 +326,15 @@ const AddProductPage: React.FC = () => {
         return (
           <select
             style={input}
-            value={value.boolean_value ?? ""}
-            onChange={(e) =>
+            value={value.boolean_value === undefined || value.boolean_value === null ? "" : String(value.boolean_value)}
+            onChange={(e) => {
+              const val = e.target.value;
               updateAttribute(attr.id, { 
-                boolean_value: e.target.value === "true" 
+                boolean_value: val === "" ? null : val === "true",
+                text_value: null,
+                attribute_value_id: null
               })
-            }
+            }}
             required={attr.required}
           >
             <option value="">Select</option>
@@ -226,17 +348,19 @@ const AddProductPage: React.FC = () => {
           <select
             style={input}
             value={value.attribute_value_id || ""}
-            onChange={(e) =>
+            onChange={(e) => {
+              const val = e.target.value;
               updateAttribute(attr.id, { 
-                attribute_value_id: Number(e.target.value) 
+                attribute_value_id: val ? Number(val) : null,
+                text_value: null
               })
-            }
+            }}
             required={attr.required}
           >
             <option value="">Select</option>
             {attr.values?.map((v) => (
               <option key={v.id} value={v.id}>
-                {v.label}
+                {v.label || v.value}
               </option>
             ))}
           </select>
@@ -247,57 +371,111 @@ const AddProductPage: React.FC = () => {
           <select
             multiple
             style={{ ...input, height: "auto", minHeight: "100px" }}
-            value={value.attribute_value_ids || []}
+            value={value.attribute_value_ids?.map(String) || []}
             onChange={(e) => {
-              const arr = [...e.target.selectedOptions].map((o) => 
-                Number(o.value)
-              )
-              updateAttribute(attr.id, { attribute_value_ids: arr })
+              const selectedOptions = Array.from(e.target.selectedOptions);
+              const arr = selectedOptions.map((o) => Number(o.value));
+              updateAttribute(attr.id, { 
+                attribute_value_ids: arr,
+                text_value: null
+              })
             }}
             required={attr.required}
           >
             {attr.values?.map((v) => (
               <option key={v.id} value={v.id}>
-                {v.label}
+                {v.label || v.value}
               </option>
             ))}
           </select>
         )
 
-      case "media":
+      case "date":
         return (
           <input
-            type="file"
-            accept="image/*"
+            style={input}
+            type="date"
+            value={value.date_value || ""}
             onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) {
-                updateAttribute(attr.id, { 
-                  media_path: URL.createObjectURL(file) 
-                })
-              }
+              updateAttribute(attr.id, { 
+                date_value: e.target.value,
+                text_value: null,
+                attribute_value_id: null
+              })
             }}
             required={attr.required}
           />
         )
 
+      case "media":
+      case "media_image": // Handle media_image as media type
+        return (
+          <div>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  updateAttribute(attr.id, { 
+                    media_path: URL.createObjectURL(file),
+                    text_value: null,
+                    attribute_value_id: null
+                  })
+                }
+              }}
+              required={attr.required}
+            />
+            {value.media_path && (
+              <div style={{ marginTop: 8 }}>
+                <img 
+                  src={value.media_path} 
+                  alt="Preview" 
+                  style={{ maxWidth: 100, maxHeight: 100, borderRadius: 4 }}
+                />
+              </div>
+            )}
+          </div>
+        )
+
       default:
-        return <div>Unsupported attribute type: {attr.attribute_type}</div>
+        return (
+          <div>
+            <input
+              style={input}
+              type="text"
+              value={value.text_value || ""}
+              onChange={(e) =>
+                updateAttribute(attr.id, { 
+                  text_value: e.target.value,
+                  attribute_value_id: null
+                })
+              }
+              placeholder={`Enter ${attr.label} (${attr.attribute_type})`}
+            />
+            <small style={{ color: "#6b7280", fontSize: "12px" }}>
+              Unsupported attribute type: {attr.attribute_type} - using text input as fallback
+            </small>
+          </div>
+        )
     }
   }
 
   const updateAttribute = useCallback((attribute_id: number, newValue: Partial<AttributeValue>) => {
-    setAttributeValues((prev) => ({
-      ...prev,
-      [attribute_id]: { 
-        attribute_id, 
-        ...prev[attribute_id], 
-        ...newValue 
-      },
-    }))
+    setAttributeValues((prev) => {
+      const current = prev[attribute_id] || { attribute_id };
+      return {
+        ...prev,
+        [attribute_id]: { 
+          ...current, 
+          ...newValue 
+        },
+      };
+    });
   }, [])
 
-  const handleGalleryUpload = (files: FileList | null) => {
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
     if (!files) return
 
     const newImages: GalleryImage[] = Array.from(files).map((file) => ({
@@ -331,7 +509,7 @@ const AddProductPage: React.FC = () => {
   }
 
   const TreeNode: React.FC<{ node: CategoryNode }> = ({ node }) => {
-    const hasChildren = node.children?.length
+    const hasChildren = node.children && node.children.length > 0
     const isOpen = openNodes[node.id] || false
 
     return (
@@ -387,6 +565,23 @@ const AddProductPage: React.FC = () => {
     }))
   }
 
+  // Find selected category names
+  const selectedCategoryNames = form.categories
+    .map(catId => {
+      const findCategory = (nodes: CategoryNode[]): string | undefined => {
+        for (const node of nodes) {
+          if (node.id === catId) return node.name;
+          if (node.children) {
+            const found = findCategory(node.children);
+            if (found) return found;
+          }
+        }
+        return undefined;
+      };
+      return findCategory(categories);
+    })
+    .filter(Boolean) as string[];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -394,12 +589,10 @@ const AddProductPage: React.FC = () => {
     setSuccess("")
 
     try {
-      // Validate required fields
       if (!form.product_code.trim() || !form.name.trim() || !form.base_price) {
         throw new Error("Please fill in all required fields")
       }
 
-      // Validate at least one category is selected
       if (form.categories.length === 0) {
         throw new Error("Please select at least one category")
       }
@@ -417,9 +610,43 @@ const AddProductPage: React.FC = () => {
         }
       })
 
-      // Append attributes
+      // Append attributes - only include attributes with values
       Object.values(attributeValues).forEach(attr => {
-        formData.append('attributes', JSON.stringify(attr))
+        if (attr.attribute_id) {
+          // Create a clean attribute object with only defined values
+          const cleanAttr: any = { attribute_id: attr.attribute_id }
+          
+          // Only add fields that have values
+          if (attr.text_value !== undefined && attr.text_value !== null && attr.text_value !== '') {
+            cleanAttr.text_value = attr.text_value
+          }
+          if (attr.decimal_value !== undefined && attr.decimal_value !== null) {
+            cleanAttr.decimal_value = attr.decimal_value
+          }
+          if (attr.integer_value !== undefined && attr.integer_value !== null) {
+            cleanAttr.integer_value = attr.integer_value
+          }
+          if (attr.boolean_value !== undefined && attr.boolean_value !== null) {
+            cleanAttr.boolean_value = attr.boolean_value
+          }
+          if (attr.attribute_value_id !== undefined && attr.attribute_value_id !== null) {
+            cleanAttr.attribute_value_id = attr.attribute_value_id
+          }
+          if (attr.attribute_value_ids !== undefined && attr.attribute_value_ids.length > 0) {
+            cleanAttr.attribute_value_ids = attr.attribute_value_ids
+          }
+          if (attr.media_path !== undefined && attr.media_path !== null) {
+            cleanAttr.media_path = attr.media_path
+          }
+          if (attr.date_value !== undefined && attr.date_value !== null && attr.date_value !== '') {
+            cleanAttr.date_value = attr.date_value
+          }
+          
+          // Only add attribute if it has at least one value field (besides attribute_id)
+          if (Object.keys(cleanAttr).length > 1) {
+            formData.append('attributes[]', JSON.stringify(cleanAttr))
+          }
+        }
       })
 
       // Append gallery images
@@ -428,6 +655,8 @@ const AddProductPage: React.FC = () => {
           formData.append(`gallery_${index}`, img.file)
         }
       })
+
+      console.log('Submitting form with attributes:', Array.from(formData.entries()))
 
       const res = await fetch("/admin/mp/product/products", {
         method: "POST",
@@ -449,6 +678,8 @@ const AddProductPage: React.FC = () => {
         short_desc: "",
         base_price: "",
         status: "active",
+        attribute_set: "",
+        visibility: "catalogsearch",
         categories: [],
       })
       setAttributeValues({})
@@ -469,6 +700,8 @@ const AddProductPage: React.FC = () => {
       short_desc: "",
       base_price: "",
       status: "active",
+      attribute_set: "",
+      visibility: "catalogsearch",
       categories: [],
     })
     setAttributeValues({})
@@ -483,10 +716,10 @@ const AddProductPage: React.FC = () => {
       <div style={header}>
         <h1 style={title}>Add New Product</h1>
         <div style={headerActions}>
-          <button style={secondaryBtn} onClick={clearForm}>
+          <button type="button" style={secondaryBtn} onClick={clearForm}>
             Clear Form
           </button>
-          <button style={backBtn} onClick={() => window.history.back()}>
+          <button type="button" style={backBtn} onClick={() => window.history.back()}>
             ← Back
           </button>
         </div>
@@ -509,15 +742,20 @@ const AddProductPage: React.FC = () => {
           <div style={formSection}>
             <h3 style={sectionTitle}>Basic Information</h3>
             
-            <FormField label="Product Code *">
-              <input
-                name="product_code"
-                value={form.product_code}
+            <FormField label="Attribute Set">
+              <select
+                name="attribute_set"
+                value={form.attribute_set}
                 onChange={handleChange}
                 style={input}
-                required
-                placeholder="Enter unique product code"
-              />
+              >
+                <option value="">Select Attribute Set</option>
+                {attributeSets.map((set) => (
+                  <option key={set.id} value={set.id}>
+                    {set.name}
+                  </option>
+                ))}
+              </select>
             </FormField>
 
             <FormField label="Product Name *">
@@ -528,6 +766,17 @@ const AddProductPage: React.FC = () => {
                 style={input}
                 required
                 placeholder="Enter product name"
+              />
+            </FormField>
+
+            <FormField label="Product Code *">
+              <input
+                name="product_code"
+                value={form.product_code}
+                onChange={handleChange}
+                style={input}
+                required
+                placeholder="Enter unique product code"
               />
             </FormField>
 
@@ -567,6 +816,20 @@ const AddProductPage: React.FC = () => {
                 <option value="inactive">Inactive</option>
               </select>
             </FormField>
+            
+            <FormField label="Visibility">
+              <select
+                name="visibility"
+                value={form.visibility}
+                onChange={handleChange}
+                style={input}
+              >
+                <option value="catalogsearch">Catalog, Search</option>
+                <option value="not_visible">Not Visible Individually</option>
+                <option value="catalog">Catalog</option>
+                <option value="search">Search</option>
+              </select>
+            </FormField>
           </div>
 
           {/* Categories & Attributes Section */}
@@ -578,13 +841,6 @@ const AddProductPage: React.FC = () => {
                 <div style={loadingText}>Loading categories...</div>
               ) : (
                 <div style={categorySection}>
-                  <input
-                    type="text"
-                    placeholder="Search categories..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={searchInput}
-                  />
                   <div style={treeBox}>
                     {filteredCategories.length === 0 ? (
                       <div style={emptyState}>
@@ -596,13 +852,13 @@ const AddProductPage: React.FC = () => {
                       ))
                     )}
                   </div>
-                  {/* <div style={selectedCategories}>
+                  <div style={selectedCategories}>
                     <strong>Selected: </strong>
-                    {form.categories.length === 0 
+                    {selectedCategoryNames.length === 0 
                       ? "None" 
-                      : form.categories.join(", ")
+                      : selectedCategoryNames.join(", ")
                     }
-                  </div> */}
+                  </div>
                 </div>
               )}
             </FormField>
@@ -613,7 +869,7 @@ const AddProductPage: React.FC = () => {
                   {attributes.map((attr) => (
                     <div key={attr.id} style={attributeItem}>
                       <label style={attributeLabel}>
-                        {attr.label}
+                        {attr.label} ({attr.attribute_type})
                         {attr.required && <span style={requiredStar}> *</span>}
                       </label>
                       {renderAttributeInput(attr)}
@@ -634,7 +890,7 @@ const AddProductPage: React.FC = () => {
                   type="file"
                   multiple
                   accept="image/*"
-                  onChange={(e) => handleGalleryUpload(e.target.files)}
+                  onChange={handleGalleryUpload}
                   style={fileInput}
                 />
                 <div style={galleryGrid}>
@@ -683,6 +939,16 @@ const AddProductPage: React.FC = () => {
           </button>
         </div>
       </form>
+      
+      {/* Add CSS for spinner animation */}
+      <style>
+        {`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </div>
   )
 }
@@ -731,7 +997,7 @@ const title = {
   margin: 0,
 }
 
-const backBtn = {
+const backBtn: React.CSSProperties = {
   padding: "8px 16px",
   border: "1px solid #d1d5db",
   borderRadius: 6,
@@ -741,31 +1007,31 @@ const backBtn = {
   fontWeight: 500,
 }
 
-const secondaryBtn = {
+const secondaryBtn: React.CSSProperties = {
   ...backBtn,
   color: "#6b7280",
 }
 
-const formBox = {
+const formBox: React.CSSProperties = {
   background: "#fff",
   padding: 32,
   borderRadius: 12,
   boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 }
 
-const formGrid = {
+const formGrid: React.CSSProperties = {
   display: "grid",
   gap: "32px",
 }
 
-const formSection = {
+const formSection: React.CSSProperties = {
   padding: 24,
   border: "1px solid #e5e7eb",
   borderRadius: 8,
   backgroundColor: "#fafafa",
 }
 
-const sectionTitle = {
+const sectionTitle: React.CSSProperties = {
   fontSize: 18,
   fontWeight: 600,
   color: "#374151",
@@ -775,14 +1041,14 @@ const sectionTitle = {
   borderBottom: "2px solid #e5e7eb",
 }
 
-const fieldRow = {
+const fieldRow: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   marginBottom: 20,
   gap: 20,
 }
 
-const labelStyle = {
+const labelStyle: React.CSSProperties = {
   width: 180,
   fontWeight: 500,
   fontSize: "14px",
@@ -790,28 +1056,29 @@ const labelStyle = {
   flexShrink: 0,
 }
 
-const input = {
+const input: React.CSSProperties = {
   flex: 1,
   padding: "10px 12px",
   borderRadius: 6,
   border: "1px solid #d1d5db",
   fontSize: "14px",
   fontFamily: "inherit",
+  width:"100%"
 }
 
-const textarea = {
+const textarea: React.CSSProperties = {
   ...input,
   height: "auto",
   minHeight: "80px",
   resize: "vertical" as const,
 }
 
-const searchInput = {
+const searchInput: React.CSSProperties = {
   ...input,
   marginBottom: "12px",
 }
 
-const treeBox = {
+const treeBox: React.CSSProperties = {
   border: "1px solid #e5e7eb",
   borderRadius: 6,
   padding: 16,
@@ -821,11 +1088,11 @@ const treeBox = {
   fontSize: "14px",
 }
 
-const categorySection = {
+const categorySection: React.CSSProperties = {
   flex: 1,
 }
 
-const selectedCategories = {
+const selectedCategories: React.CSSProperties = {
   marginTop: "12px",
   padding: "8px 12px",
   backgroundColor: "#f3f4f6",
@@ -833,18 +1100,19 @@ const selectedCategories = {
   fontSize: "14px",
 }
 
-const attributesBox = {
+const attributesBox: React.CSSProperties = {
   padding: "16px",
   border: "1px solid #e5e7eb",
   borderRadius: 8,
   backgroundColor: "#fff",
+  width: "100%",
 }
 
-const attributeItem = {
+const attributeItem: React.CSSProperties = {
   marginBottom: 20,
 }
 
-const attributeLabel = {
+const attributeLabel: React.CSSProperties = {
   display: "block",
   fontWeight: 500,
   marginBottom: 6,
@@ -852,27 +1120,27 @@ const attributeLabel = {
   color: "#374151",
 }
 
-const gallerySection = {
+const gallerySection: React.CSSProperties = {
   flex: 1,
 }
 
-const fileInput = {
+const fileInput: React.CSSProperties = {
   width: "100%",
   marginBottom: 16,
 }
 
-const galleryGrid = {
+const galleryGrid: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))",
   gap: 12,
   marginTop: 12,
 }
 
-const galleryItem = {
+const galleryItem: React.CSSProperties = {
   position: "relative" as const,
 }
 
-const galleryImage = {
+const galleryImage: React.CSSProperties = {
   width: "100%",
   height: 80,
   objectFit: "cover" as const,
@@ -880,7 +1148,7 @@ const galleryImage = {
   border: "1px solid #e5e7eb",
 }
 
-const removeImageBtn = {
+const removeImageBtn: React.CSSProperties = {
   position: "absolute" as const,
   top: -8,
   right: -8,
@@ -897,13 +1165,13 @@ const removeImageBtn = {
   justifyContent: "center",
 }
 
-const submitSection = {
+const submitSection: React.CSSProperties = {
   marginTop: 32,
   paddingTop: 24,
   borderTop: "1px solid #e5e7eb",
 }
 
-const submitBtn = {
+const submitBtn: React.CSSProperties = {
   width: "100%",
   padding: "12px 24px",
   background: "#2563eb",
@@ -919,7 +1187,7 @@ const submitBtn = {
   gap: "8px",
 }
 
-const errorAlert = {
+const errorAlert: React.CSSProperties = {
   padding: "12px 16px",
   backgroundColor: "#fef2f2",
   border: "1px solid #fecaca",
@@ -929,7 +1197,7 @@ const errorAlert = {
   fontSize: "14px",
 }
 
-const successAlert = {
+const successAlert: React.CSSProperties = {
   padding: "12px 16px",
   backgroundColor: "#f0fdf4",
   border: "1px solid #bbf7d0",
@@ -939,42 +1207,32 @@ const successAlert = {
   fontSize: "14px",
 }
 
-const loadingText = {
+const loadingText: React.CSSProperties = {
   color: "#6b7280",
   fontStyle: "italic",
   padding: "20px",
   textAlign: "center" as const,
 }
 
-const emptyState = {
+const emptyState: React.CSSProperties = {
   color: "#6b7280",
   fontStyle: "italic",
   textAlign: "center" as const,
   padding: "20px",
 }
 
-const requiredStar = {
+const requiredStar: React.CSSProperties = {
   color: "#dc2626",
 }
 
-const spinner = {
+const spinner: React.CSSProperties = {
   width: 16,
   height: 16,
-  border: "2px solid transparent",
+  border: "2px solid rgba(255,255,255,0.3)",
   borderTop: "2px solid currentColor",
   borderRadius: "50%",
   animation: "spin 1s linear infinite",
 }
-
-// Add CSS animation for spinner
-const styles = document.createElement('style')
-styles.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`
-document.head.appendChild(styles)
 
 export const config = defineRouteConfig({
   path: "/redington-product-add",
