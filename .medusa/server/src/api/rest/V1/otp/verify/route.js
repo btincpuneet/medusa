@@ -1,0 +1,76 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.POST = exports.OPTIONS = void 0;
+const pg_1 = require("../../../../../lib/pg");
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "POST,OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+const POST = async (req, res) => {
+    setCors(req, res);
+    const body = (req.body || {});
+    const email = (body.customer_email || "").trim().toLowerCase();
+    const action = (body.action || "login").trim().toLowerCase();
+    const otpCode = (body.otpCode || "").trim();
+    if (!email || !otpCode) {
+        return res.status(400).json({
+            message: "customer_email and otpCode are required.",
+        });
+    }
+    await (0, pg_1.ensureRedingtonOtpTable)();
+    const { rows } = await (0, pg_1.getPgPool)().query(`
+      SELECT id, code, expires_at, consumed_at
+      FROM redington_otp
+      WHERE email = $1 AND action = $2
+      LIMIT 1
+    `, [email, action]);
+    if (!rows[0]) {
+        return res.status(400).json({
+            message: "OTP not found. Please request a new code.",
+        });
+    }
+    const record = rows[0];
+    const now = new Date();
+    const expiresAt = new Date(record.expires_at);
+    if (record.consumed_at) {
+        return res.status(400).json({
+            message: "OTP has already been used. Please request a new code.",
+        });
+    }
+    if (now > expiresAt) {
+        return res.status(400).json({
+            message: "OTP expired. Please request a new code.",
+        });
+    }
+    if (String(record.code).trim() !== otpCode) {
+        return res.status(400).json({
+            message: "Invalid OTP code.",
+        });
+    }
+    await (0, pg_1.getPgPool)().query(`
+      UPDATE redington_otp
+      SET consumed_at = NOW(), updated_at = NOW()
+      WHERE id = $1
+    `, [record.id]);
+    return res.json({
+        status: "success",
+        message: "OTP verified.",
+    });
+};
+exports.POST = POST;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvb3RwL3ZlcmlmeS9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFFQSw4Q0FHOEI7QUFFOUIsTUFBTSxPQUFPLEdBQUcsQ0FBQyxHQUFrQixFQUFFLEdBQW1CLEVBQUUsRUFBRTtJQUMxRCxNQUFNLE1BQU0sR0FBRyxHQUFHLENBQUMsT0FBTyxDQUFDLE1BQU0sQ0FBQTtJQUNqQyxJQUFJLE1BQU0sRUFBRSxDQUFDO1FBQ1gsR0FBRyxDQUFDLE1BQU0sQ0FBQyw2QkFBNkIsRUFBRSxNQUFNLENBQUMsQ0FBQTtRQUNqRCxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sRUFBRSxRQUFRLENBQUMsQ0FBQTtJQUM5QixDQUFDO1NBQU0sQ0FBQztRQUNOLEdBQUcsQ0FBQyxNQUFNLENBQUMsNkJBQTZCLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFDaEQsQ0FBQztJQUVELEdBQUcsQ0FBQyxNQUFNLENBQ1IsOEJBQThCLEVBQzlCLEdBQUcsQ0FBQyxPQUFPLENBQUMsZ0NBQWdDLENBQUM7UUFDM0MsNkJBQTZCLENBQ2hDLENBQUE7SUFDRCxHQUFHLENBQUMsTUFBTSxDQUFDLDhCQUE4QixFQUFFLGNBQWMsQ0FBQyxDQUFBO0lBQzFELEdBQUcsQ0FBQyxNQUFNLENBQUMsa0NBQWtDLEVBQUUsTUFBTSxDQUFDLENBQUE7QUFDeEQsQ0FBQyxDQUFBO0FBRU0sTUFBTSxPQUFPLEdBQUcsS0FBSyxFQUFFLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQ3ZFLE9BQU8sQ0FBQyxHQUFHLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFDakIsR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLEVBQUUsQ0FBQTtBQUN4QixDQUFDLENBQUE7QUFIWSxRQUFBLE9BQU8sV0FHbkI7QUFRTSxNQUFNLElBQUksR0FB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

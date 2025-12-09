@@ -1,0 +1,22 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sendErrorResponse = void 0;
+const utils_1 = require("@medusajs/framework/utils");
+const statusByType = {
+    [utils_1.MedusaError.Types.INVALID_DATA]: 400,
+    [utils_1.MedusaError.Types.UNAUTHORIZED]: 401,
+    [utils_1.MedusaError.Types.NOT_ALLOWED]: 403,
+    [utils_1.MedusaError.Types.NOT_FOUND]: 404,
+};
+const sendErrorResponse = (res, error, fallbackMessage) => {
+    if (error instanceof utils_1.MedusaError) {
+        const status = statusByType[error.type] || 500;
+        return res.status(status).json({ message: error.message });
+    }
+    if (error instanceof Error) {
+        return res.status(500).json({ message: error.message });
+    }
+    return res.status(500).json({ message: fallbackMessage });
+};
+exports.sendErrorResponse = sendErrorResponse;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicmVzcG9uZC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uLy4uLy4uL3NyYy9hcGkvcmVkaW5ndG9uL3V0aWxzL3Jlc3BvbmQudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBQ0EscURBQXVEO0FBRXZELE1BQU0sWUFBWSxHQUEyQjtJQUMzQyxDQUFDLG1CQUFXLENBQUMsS0FBSyxDQUFDLFlBQVksQ0FBQyxFQUFFLEdBQUc7SUFDckMsQ0FBQyxtQkFBVyxDQUFDLEtBQUssQ0FBQyxZQUFZLENBQUMsRUFBRSxHQUFHO0lBQ3JDLENBQUMsbUJBQVcsQ0FBQyxLQUFLLENBQUMsV0FBVyxDQUFDLEVBQUUsR0FBRztJQUNwQyxDQUFDLG1CQUFXLENBQUMsS0FBSyxDQUFDLFNBQVMsQ0FBQyxFQUFFLEdBQUc7Q0FDbkMsQ0FBQTtBQUVNLE1BQU0saUJBQWlCLEdBQUcsQ0FDL0IsR0FBbUIsRUFDbkIsS0FBYyxFQUNkLGVBQXVCLEVBQ3ZCLEVBQUU7SUFDRixJQUFJLEtBQUssWUFBWSxtQkFBVyxFQUFFLENBQUM7UUFDakMsTUFBTSxNQUFNLEdBQUcsWUFBWSxDQUFDLEtBQUssQ0FBQyxJQUFJLENBQUMsSUFBSSxHQUFHLENBQUE7UUFDOUMsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxLQUFLLENBQUMsT0FBTyxFQUFFLENBQUMsQ0FBQTtJQUM1RCxDQUFDO0lBRUQsSUFBSSxLQUFLLFlBQVksS0FBSyxFQUFFLENBQUM7UUFDM0IsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxLQUFLLENBQUMsT0FBTyxFQUFFLENBQUMsQ0FBQTtJQUN6RCxDQUFDO0lBRUQsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxlQUFlLEVBQUUsQ0FBQyxDQUFBO0FBQzNELENBQUMsQ0FBQTtBQWZZLFFBQUEsaUJBQWlCLHFCQWU3QiJ9

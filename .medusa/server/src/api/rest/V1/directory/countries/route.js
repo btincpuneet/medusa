@@ -1,0 +1,62 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = exports.OPTIONS = void 0;
+const magentoClient_1 = require("../../../../magentoClient");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const ensureMagentoConfig = () => {
+    if (!MAGENTO_REST_BASE_URL) {
+        throw new Error("MAGENTO_REST_BASE_URL is required to proxy Magento directory endpoints.");
+    }
+};
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+const GET = async (req, res) => {
+    setCors(req, res);
+    try {
+        ensureMagentoConfig();
+    }
+    catch (error) {
+        return res.status(500).json({
+            message: error instanceof Error
+                ? error.message
+                : "Magento configuration missing.",
+        });
+    }
+    const client = (0, magentoClient_1.createMagentoB2CClient)({
+        baseUrl: MAGENTO_REST_BASE_URL,
+    });
+    try {
+        const response = await client.request({
+            url: "directory/countries",
+            method: "GET",
+            params: req.query,
+        });
+        return res.status(response.status).json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 502;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            "Failed to load country directory.";
+        return res.status(status).json({ message });
+    }
+};
+exports.GET = GET;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvZGlyZWN0b3J5L2NvdW50cmllcy9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFFQSw2REFBa0U7QUFFbEUsTUFBTSxxQkFBcUIsR0FBRyxPQUFPLENBQUMsR0FBRyxDQUFDLHFCQUFxQixDQUFBO0FBRS9ELE1BQU0sbUJBQW1CLEdBQUcsR0FBRyxFQUFFO0lBQy9CLElBQUksQ0FBQyxxQkFBcUIsRUFBRSxDQUFDO1FBQzNCLE1BQU0sSUFBSSxLQUFLLENBQ2IseUVBQXlFLENBQzFFLENBQUE7SUFDSCxDQUFDO0FBQ0gsQ0FBQyxDQUFBO0FBRUQsTUFBTSxPQUFPLEdBQUcsQ0FBQyxHQUFrQixFQUFFLEdBQW1CLEVBQUUsRUFBRTtJQUMxRCxNQUFNLE1BQU0sR0FBRyxHQUFHLENBQUMsT0FBTyxDQUFDLE1BQU0sQ0FBQTtJQUNqQyxJQUFJLE1BQU0sRUFBRSxDQUFDO1FBQ1gsR0FBRyxDQUFDLE1BQU0sQ0FBQyw2QkFBNkIsRUFBRSxNQUFNLENBQUMsQ0FBQTtRQUNqRCxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sRUFBRSxRQUFRLENBQUMsQ0FBQTtJQUM5QixDQUFDO1NBQU0sQ0FBQztRQUNOLEdBQUcsQ0FBQyxNQUFNLENBQUMsNkJBQTZCLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFDaEQsQ0FBQztJQUVELEdBQUcsQ0FBQyxNQUFNLENBQ1IsOEJBQThCLEVBQzlCLEdBQUcsQ0FBQyxPQUFPLENBQUMsZ0NBQWdDLENBQUM7UUFDM0MsNkJBQTZCLENBQ2hDLENBQUE7SUFDRCxHQUFHLENBQUMsTUFBTSxDQUFDLDhCQUE4QixFQUFFLGFBQWEsQ0FBQyxDQUFBO0lBQ3pELEdBQUcsQ0FBQyxNQUFNLENBQUMsa0NBQWtDLEVBQUUsTUFBTSxDQUFDLENBQUE7QUFDeEQsQ0FBQyxDQUFBO0FBRU0sTUFBTSxPQUFPLEdBQUcsS0FBSyxFQUFFLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQ3ZFLE9BQU8sQ0FBQyxHQUFHLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFDakIsR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLEVBQUUsQ0FBQTtBQUN4QixDQUFDLENBQUE7QUFIWSxRQUFBLE9BQU8sV0FHbkI7QUFFTSxNQUFNLEdBQUcsR0FBRyxLQUFLLEVBQUUsR0FBa0IsRUFBRSxHQUFtQixFQUFFLEVBQUU7SUFDbkUsT0FBTyxDQUFDLEdBQUcsRUFBRSxHQUFHLENBQUMsQ0FBQTtJQUVqQixJQUFJLENBQUM7UUFDSCxtQkFBbUIsRUFBRSxDQUFBO0lBQ3ZCLENBQUM7SUFBQyxPQUFPLEtBQUssRUFBRSxDQUFDO1FBQ2YsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQztZQUMxQixPQUFPLEVBQ0wsS0FBSyxZQUFZLEtBQUs7Z0JBQ3BCLENBQUMsQ0FBQyxLQUFLLENBQUMsT0FBTztnQkFDZixDQUFDLENBQUMsZ0NBQWdDO1NBQ3ZDLENBQUMsQ0FBQTtJQUNKLENBQUM7SUFFRCxNQUFNLE1BQU0sR0FBRyxJQUFBLHNDQUFzQixFQUFDO1FBQ3BDLE9BQU8sRUFBRSxxQkFBc0I7S0FDaEMsQ0FBQyxDQUFBO0lBRUYsSUFBSSxDQUFDO1FBQ0gsTUFBTSxRQUFRLEdBQUcsTUFBTSxNQUFNLENBQUMsT0FBTyxDQUFDO1lBQ3BDLEdBQUcsRUFBRSxxQkFBcUI7WUFDMUIsTUFBTSxFQUFFLEtBQUs7WUFDYixNQUFNLEVBQUUsR0FBRyxDQUFDLEtBQUs7U0FDbEIsQ0FBQyxDQUFBO1FBRUYsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsQ0FBQyxJQUFJLENBQUMsUUFBUSxDQUFDLElBQUksQ0FBQyxDQUFBO0lBQ3hELENBQUM7SUFBQyxPQUFPLEtBQVUsRUFBRSxDQUFDO1FBQ3BCLE1BQU0sTUFBTSxHQUFHLEtBQUssRUFBRSxRQUFRLEVBQUUsTUFBTSxJQUFJLEdBQUcsQ0FBQTtRQUM3QyxNQUFNLE9BQU8sR0FDWCxLQUFLLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRSxPQUFPO1lBQzlCLEtBQUssRUFBRSxPQUFPO1lBQ2QsbUNBQW1DLENBQUE7UUFDckMsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxDQUFDLENBQUE7SUFDN0MsQ0FBQztBQUNILENBQUMsQ0FBQTtBQWxDWSxRQUFBLEdBQUcsT0FrQ2YifQ==

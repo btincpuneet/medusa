@@ -1,0 +1,51 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.POST = void 0;
+const magentoClient_1 = require("../../../../magentoClient");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const MAGENTO_ADMIN_TOKEN = process.env.MAGENTO_ADMIN_TOKEN;
+const ensureMagentoConfig = () => {
+    if (!MAGENTO_REST_BASE_URL || !MAGENTO_ADMIN_TOKEN) {
+        throw new Error("MAGENTO_REST_BASE_URL and MAGENTO_ADMIN_TOKEN are required for password update.");
+    }
+};
+const makeClient = () => (0, magentoClient_1.createMagentoB2CClient)({
+    baseUrl: MAGENTO_REST_BASE_URL,
+    axiosConfig: {
+        headers: {
+            Authorization: `Bearer ${MAGENTO_ADMIN_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    },
+});
+const POST = async (req, res) => {
+    try {
+        ensureMagentoConfig();
+    }
+    catch (error) {
+        return res.status(500).json({
+            message: error instanceof Error
+                ? error.message
+                : "Magento configuration missing.",
+        });
+    }
+    const client = makeClient();
+    try {
+        const response = await client.request({
+            url: "password/update",
+            method: "POST",
+            data: req.body,
+            params: req.query,
+        });
+        return res.status(response.status).json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 502;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            "Failed to update password.";
+        return res.status(status).json({ message });
+    }
+};
+exports.POST = POST;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9wYXNzd29yZC91cGRhdGUvcm91dGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBRUEsNkRBQWtFO0FBRWxFLE1BQU0scUJBQXFCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxxQkFBcUIsQ0FBQTtBQUMvRCxNQUFNLG1CQUFtQixHQUFHLE9BQU8sQ0FBQyxHQUFHLENBQUMsbUJBQW1CLENBQUE7QUFFM0QsTUFBTSxtQkFBbUIsR0FBRyxHQUFHLEVBQUU7SUFDL0IsSUFBSSxDQUFDLHFCQUFxQixJQUFJLENBQUMsbUJBQW1CLEVBQUUsQ0FBQztRQUNuRCxNQUFNLElBQUksS0FBSyxDQUNiLGlGQUFpRixDQUNsRixDQUFBO0lBQ0gsQ0FBQztBQUNILENBQUMsQ0FBQTtBQUVELE1BQU0sVUFBVSxHQUFHLEdBQUcsRUFBRSxDQUN0QixJQUFBLHNDQUFzQixFQUFDO0lBQ3JCLE9BQU8sRUFBRSxxQkFBc0I7SUFDL0IsV0FBVyxFQUFFO1FBQ1gsT0FBTyxFQUFFO1lBQ1AsYUFBYSxFQUFFLFVBQVUsbUJBQW1CLEVBQUU7WUFDOUMsY0FBYyxFQUFFLGtCQUFrQjtTQUNuQztLQUNGO0NBQ0YsQ0FBQyxDQUFBO0FBRUcsTUFBTSxJQUFJLEdBQUcsS0FBSyxFQUFFLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQ3BFLElBQUksQ0FBQztRQUNILG1CQUFtQixFQUFFLENBQUE7SUFDdkIsQ0FBQztJQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7UUFDZixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1lBQzFCLE9BQU8sRUFDTCxLQUFLLFlBQVksS0FBSztnQkFDcEIsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPO2dCQUNmLENBQUMsQ0FBQyxnQ0FBZ0M7U0FDdkMsQ0FBQyxDQUFBO0lBQ0osQ0FBQztJQUVELE1BQU0sTUFBTSxHQUFHLFVBQVUsRUFBRSxDQUFBO0lBRTNCLElBQUksQ0FBQztRQUNILE1BQU0sUUFBUSxHQUFHLE1BQU0sTUFBTSxDQUFDLE9BQU8sQ0FBQztZQUNwQyxHQUFHLEVBQUUsaUJBQWlCO1lBQ3RCLE1BQU0sRUFBRSxNQUFNO1lBQ2QsSUFBSSxFQUFFLEdBQUcsQ0FBQyxJQUFJO1lBQ2QsTUFBTSxFQUFFLEdBQUcsQ0FBQyxLQUFLO1NBQ2xCLENBQUMsQ0FBQTtRQUVGLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxRQUFRLENBQUMsTUFBTSxDQUFDLENBQUMsSUFBSSxDQUFDLFFBQVEsQ0FBQyxJQUFJLENBQUMsQ0FBQTtJQUN4RCxDQUFDO0lBQUMsT0FBTyxLQUFVLEVBQUUsQ0FBQztRQUNwQixNQUFNLE1BQU0sR0FBRyxLQUFLLEVBQUUsUUFBUSxFQUFFLE1BQU0sSUFBSSxHQUFHLENBQUE7UUFDN0MsTUFBTSxPQUFPLEdBQ1gsS0FBSyxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsT0FBTztZQUM5QixLQUFLLEVBQUUsT0FBTztZQUNkLDRCQUE0QixDQUFBO1FBQzlCLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxNQUFNLENBQUMsQ0FBQyxJQUFJLENBQUMsRUFBRSxPQUFPLEVBQUUsQ0FBQyxDQUFBO0lBQzdDLENBQUM7QUFDSCxDQUFDLENBQUE7QUEvQlksUUFBQSxJQUFJLFFBK0JoQiJ9

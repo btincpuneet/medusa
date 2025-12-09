@@ -1,0 +1,55 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = GET;
+exports.POST = POST;
+const pg_1 = require("../../../../lib/pg");
+const parseBoolean = (value, fallback = true) => {
+    if (value === undefined) {
+        return fallback;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (["1", "true", "yes", "on"].includes(normalized)) {
+            return true;
+        }
+        if (["0", "false", "no", "off"].includes(normalized)) {
+            return false;
+        }
+    }
+    return fallback;
+};
+async function GET(req, res) {
+    const videos = await (0, pg_1.listHomeVideos)();
+    return res.json({
+        home_videos: videos,
+    });
+}
+async function POST(req, res) {
+    const body = (req.body || {});
+    const title = (body.title ?? "").toString().trim();
+    const url = (body.url ?? "").toString().trim();
+    if (!title || !url) {
+        return res.status(400).json({
+            message: "title and url are required",
+        });
+    }
+    try {
+        const video = await (0, pg_1.createHomeVideo)({
+            title,
+            url,
+            status: parseBoolean(body.status, true),
+        });
+        return res.status(201).json({
+            home_video: video,
+        });
+    }
+    catch (error) {
+        return res.status(400).json({
+            message: error instanceof Error ? error.message : "Invalid payload",
+        });
+    }
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9ob21lLXZpZGVvcy9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQTBCQSxrQkFLQztBQVFELG9CQTJCQztBQWhFRCwyQ0FHMkI7QUFFM0IsTUFBTSxZQUFZLEdBQUcsQ0FBQyxLQUFjLEVBQUUsUUFBUSxHQUFHLElBQUksRUFBRSxFQUFFO0lBQ3ZELElBQUksS0FBSyxLQUFLLFNBQVMsRUFBRSxDQUFDO1FBQ3hCLE9BQU8sUUFBUSxDQUFBO0lBQ2pCLENBQUM7SUFDRCxJQUFJLE9BQU8sS0FBSyxLQUFLLFNBQVMsRUFBRSxDQUFDO1FBQy9CLE9BQU8sS0FBSyxDQUFBO0lBQ2QsQ0FBQztJQUNELElBQUksT0FBTyxLQUFLLEtBQUssUUFBUSxFQUFFLENBQUM7UUFDOUIsTUFBTSxVQUFVLEdBQUcsS0FBSyxDQUFDLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRSxDQUFBO1FBQzdDLElBQUksQ0FBQyxHQUFHLEVBQUUsTUFBTSxFQUFFLEtBQUssRUFBRSxJQUFJLENBQUMsQ0FBQyxRQUFRLENBQUMsVUFBVSxDQUFDLEVBQUUsQ0FBQztZQUNwRCxPQUFPLElBQUksQ0FBQTtRQUNiLENBQUM7UUFDRCxJQUFJLENBQUMsR0FBRyxFQUFFLE9BQU8sRUFBRSxJQUFJLEVBQUUsS0FBSyxDQUFDLENBQUMsUUFBUSxDQUFDLFVBQVUsQ0FBQyxFQUFFLENBQUM7WUFDckQsT0FBTyxLQUFLLENBQUE7UUFDZCxDQUFDO0lBQ0gsQ0FBQztJQUNELE9BQU8sUUFBUSxDQUFBO0FBQ2pCLENBQUMsQ0FBQTtBQUVNLEtBQUssVUFBVSxHQUFHLENBQUMsR0FBa0IsRUFBRSxHQUFtQjtJQUMvRCxNQUFNLE1BQU0sR0FBRyxNQUFNLElBQUEsbUJBQWMsR0FBRSxDQUFBO0lBQ3JDLE9BQU8sR0FBRyxDQUFDLElBQUksQ0FBQztRQUNkLFdBQVcsRUFBRSxNQUFNO0tBQ3BCLENBQUMsQ0FBQTtBQUNKLENBQUM7QUFRTSxLQUFLLFVBQVUsSUFBSSxDQUFDLEdBQWtCLEVBQUUsR0FBbUI7SUFDaEUsTUFBTSxJQUFJLEdBQUcsQ0FBQyxHQUFHLENBQUMsSUFBSSxJQUFJLEVBQUUsQ0FBd0IsQ0FBQTtJQUVwRCxNQUFNLEtBQUssR0FBRyxDQUFDLElBQUksQ0FBQyxLQUFLLElBQUksRUFBRSxDQUFDLENBQUMsUUFBUSxFQUFFLENBQUMsSUFBSSxFQUFFLENBQUE7SUFDbEQsTUFBTSxHQUFHLEdBQUcsQ0FBQyxJQUFJLENBQUMsR0FBRyxJQUFJLEVBQUUsQ0FBQyxDQUFDLFFBQVEsRUFBRSxDQUFDLElBQUksRUFBRSxDQUFBO0lBRTlDLElBQUksQ0FBQyxLQUFLLElBQUksQ0FBQyxHQUFHLEVBQUUsQ0FBQztRQUNuQixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1lBQzFCLE9BQU8sRUFBRSw0QkFBNEI7U0FDdEMsQ0FBQyxDQUFBO0lBQ0osQ0FBQztJQUVELElBQUksQ0FBQztRQUNILE1BQU0sS0FBSyxHQUFHLE1BQU0sSUFBQSxvQkFBZSxFQUFDO1lBQ2xDLEtBQUs7WUFDTCxHQUFHO1lBQ0gsTUFBTSxFQUFFLFlBQVksQ0FBQyxJQUFJLENBQUMsTUFBTSxFQUFFLElBQUksQ0FBQztTQUN4QyxDQUFDLENBQUE7UUFFRixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1lBQzFCLFVBQVUsRUFBRSxLQUFLO1NBQ2xCLENBQUMsQ0FBQTtJQUNKLENBQUM7SUFBQyxPQUFPLEtBQUssRUFBRSxDQUFDO1FBQ2YsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQztZQUMxQixPQUFPLEVBQUUsS0FBSyxZQUFZLEtBQUssQ0FBQyxDQUFDLENBQUMsS0FBSyxDQUFDLE9BQU8sQ0FBQyxDQUFDLENBQUMsaUJBQWlCO1NBQ3BFLENBQUMsQ0FBQTtJQUNKLENBQUM7QUFDSCxDQUFDIn0=

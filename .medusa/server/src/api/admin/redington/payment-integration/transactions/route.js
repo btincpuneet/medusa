@@ -1,0 +1,50 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = void 0;
+const redington_mpgs_1 = require("~modules/redington-mpgs");
+const parseFilters = (query) => {
+    const filters = {};
+    const assign = (key) => {
+        const value = query[key];
+        if (typeof value === "string" && value.trim()) {
+            filters[key] = value.trim();
+        }
+    };
+    assign("order_ref_id");
+    assign("order_increment_id");
+    assign("session_id");
+    assign("transaction_reference");
+    assign("result_indicator");
+    assign("payment_status");
+    return filters;
+};
+const parsePagination = (query) => {
+    const pagination = {};
+    if (query.limit !== undefined) {
+        const parsed = Number(query.limit);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            pagination.limit = Math.trunc(parsed);
+        }
+    }
+    if (query.offset !== undefined) {
+        const parsed = Number(query.offset);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            pagination.offset = Math.trunc(parsed);
+        }
+    }
+    return pagination;
+};
+const GET = async (req, res) => {
+    const query = (req.query || {});
+    const filters = parseFilters(query);
+    const pagination = parsePagination(query);
+    const [transactions, count] = await (0, redington_mpgs_1.listMpgsTransactions)(filters, pagination);
+    res.json({
+        transactions,
+        count,
+        limit: pagination.limit ?? 25,
+        offset: pagination.offset ?? 0,
+    });
+};
+exports.GET = GET;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9wYXltZW50LWludGVncmF0aW9uL3RyYW5zYWN0aW9ucy9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFLQSw0REFHZ0M7QUFFaEMsTUFBTSxZQUFZLEdBQUcsQ0FBQyxLQUE4QixFQUFFLEVBQUU7SUFDdEQsTUFBTSxPQUFPLEdBQW9DLEVBQUUsQ0FBQTtJQUVuRCxNQUFNLE1BQU0sR0FBRyxDQUFDLEdBQWlDLEVBQUUsRUFBRTtRQUNuRCxNQUFNLEtBQUssR0FBRyxLQUFLLENBQUMsR0FBRyxDQUFDLENBQUE7UUFDeEIsSUFBSSxPQUFPLEtBQUssS0FBSyxRQUFRLElBQUksS0FBSyxDQUFDLElBQUksRUFBRSxFQUFFLENBQUM7WUFDOUMsT0FBTyxDQUFDLEdBQUcsQ0FBQyxHQUFHLEtBQUssQ0FBQyxJQUFJLEVBQUUsQ0FBQTtRQUM3QixDQUFDO0lBQ0gsQ0FBQyxDQUFBO0lBRUQsTUFBTSxDQUFDLGNBQWMsQ0FBQyxDQUFBO0lBQ3RCLE1BQU0sQ0FBQyxvQkFBb0IsQ0FBQyxDQUFBO0lBQzVCLE1BQU0sQ0FBQyxZQUFZLENBQUMsQ0FBQTtJQUNwQixNQUFNLENBQUMsdUJBQXVCLENBQUMsQ0FBQTtJQUMvQixNQUFNLENBQUMsa0JBQWtCLENBQUMsQ0FBQTtJQUMxQixNQUFNLENBQUMsZ0JBQWdCLENBQUMsQ0FBQTtJQUV4QixPQUFPLE9BQU8sQ0FBQTtBQUNoQixDQUFDLENBQUE7QUFFRCxNQUFNLGVBQWUsR0FBRyxDQUFDLEtBQThCLEVBQUUsRUFBRTtJQUN6RCxNQUFNLFVBQVUsR0FBd0MsRUFBRSxDQUFBO0lBRTFELElBQUksS0FBSyxDQUFDLEtBQUssS0FBSyxTQUFTLEVBQUUsQ0FBQztRQUM5QixNQUFNLE1BQU0sR0FBRyxNQUFNLENBQUMsS0FBSyxDQUFDLEtBQUssQ0FBQyxDQUFBO1FBQ2xDLElBQUksTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsSUFBSSxNQUFNLEdBQUcsQ0FBQyxFQUFFLENBQUM7WUFDMUMsVUFBVSxDQUFDLEtBQUssR0FBRyxJQUFJLENBQUMsS0FBSyxDQUFDLE1BQU0sQ0FBQyxDQUFBO1FBQ3ZDLENBQUM7SUFDSCxDQUFDO0lBRUQsSUFBSSxLQUFLLENBQUMsTUFBTSxLQUFLLFNBQVMsRUFBRSxDQUFDO1FBQy9CLE1BQU0sTUFBTSxHQUFHLE1BQU0sQ0FBQyxLQUFLLENBQUMsTUFBTSxDQUFDLENBQUE7UUFDbkMsSUFBSSxNQUFNLENBQUMsUUFBUSxDQUFDLE1BQU0sQ0FBQyxJQUFJLE1BQU0sSUFBSSxDQUFDLEVBQUUsQ0FBQztZQUMzQyxVQUFVLENBQUMsTUFBTSxHQUFHLElBQUksQ0FBQyxLQUFLLENBQUMsTUFBTSxDQUFDLENBQUE7UUFDeEMsQ0FBQztJQUNILENBQUM7SUFFRCxPQUFPLFVBQVUsQ0FBQTtBQUNuQixDQUFDLENBQUE7QUFFTSxNQUFNLEdBQUcsR0FBRyxLQUFLLEVBQUUsR0FBa0IsRUFBRSxHQUFtQixFQUFFLEVBQUU7SUFDbkUsTUFBTSxLQUFLLEdBQUcsQ0FBQyxHQUFHLENBQUMsS0FBSyxJQUFJLEVBQUUsQ0FBNEIsQ0FBQTtJQUMxRCxNQUFNLE9BQU8sR0FBRyxZQUFZLENBQUMsS0FBSyxDQUFDLENBQUE7SUFDbkMsTUFBTSxVQUFVLEdBQUcsZUFBZSxDQUFDLEtBQUssQ0FBQyxDQUFBO0lBRXpDLE1BQU0sQ0FBQyxZQUFZLEVBQUUsS0FBSyxDQUFDLEdBQUcsTUFBTSxJQUFBLHFDQUFvQixFQUN0RCxPQUFPLEVBQ1AsVUFBVSxDQUNYLENBQUE7SUFFRCxHQUFHLENBQUMsSUFBSSxDQUFDO1FBQ1AsWUFBWTtRQUNaLEtBQUs7UUFDTCxLQUFLLEVBQUUsVUFBVSxDQUFDLEtBQUssSUFBSSxFQUFFO1FBQzdCLE1BQU0sRUFBRSxVQUFVLENBQUMsTUFBTSxJQUFJLENBQUM7S0FDL0IsQ0FBQyxDQUFBO0FBQ0osQ0FBQyxDQUFBO0FBaEJZLFFBQUEsR0FBRyxPQWdCZiJ9

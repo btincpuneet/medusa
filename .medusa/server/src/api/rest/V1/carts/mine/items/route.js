@@ -1,0 +1,106 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DELETE = exports.PATCH = exports.PUT = exports.POST = exports.GET = exports.OPTIONS = void 0;
+const axios_1 = __importDefault(require("axios"));
+const pg_1 = require("../../../../../../lib/pg");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const ensureMagentoConfig = () => {
+    if (!MAGENTO_REST_BASE_URL) {
+        throw new Error("MAGENTO_REST_BASE_URL is required for cart proxy routes.");
+    }
+};
+const ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", ALLOWED_METHODS);
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const respondForGuest = (method) => {
+    switch (method) {
+        case "POST":
+        case "PUT":
+        case "PATCH":
+        case "DELETE":
+            return { success: true };
+        default:
+            return [];
+    }
+};
+const forwardToMagento = async (req, res) => {
+    setCors(req, res);
+    try {
+        ensureMagentoConfig();
+    }
+    catch (error) {
+        return res
+            .status(500)
+            .json({ message: error.message ?? "Magento config missing." });
+    }
+    const tokenHeader = req.headers.authorization || req.headers["x-auth-token"] || undefined;
+    const authHeader = Array.isArray(tokenHeader)
+        ? tokenHeader[0]
+        : tokenHeader;
+    if (!tokenHeader) {
+        return res.status(401).json({ message: "Missing Authorization header." });
+    }
+    const method = (req.method || "GET").toUpperCase();
+    const tokenValue = (authHeader || "").replace(/^Bearer\s+/i, "").trim();
+    if (tokenValue && !tokenValue.includes(".")) {
+        const guestToken = await (0, pg_1.findActiveGuestToken)(tokenValue);
+        if (guestToken) {
+            return res.json(respondForGuest(method));
+        }
+    }
+    const baseURL = MAGENTO_REST_BASE_URL.replace(/\/$/, "");
+    const axiosConfig = {
+        baseURL,
+        url: "carts/mine/items",
+        method,
+        headers: {
+            Authorization: tokenHeader,
+            "Content-Type": "application/json",
+        },
+        params: method === "GET" ? req.query : undefined,
+        data: method === "POST" ||
+            method === "PUT" ||
+            method === "PATCH" ||
+            method === "DELETE"
+            ? req.body
+            : undefined,
+        validateStatus: () => true,
+    };
+    try {
+        const response = await axios_1.default.request(axiosConfig);
+        return res.status(response.status).json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 500;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            "Failed to proxy Magento cart items request.";
+        return res.status(status).json({ message });
+    }
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+exports.GET = forwardToMagento;
+exports.POST = forwardToMagento;
+exports.PUT = forwardToMagento;
+exports.PATCH = forwardToMagento;
+exports.DELETE = forwardToMagento;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvY2FydHMvbWluZS9pdGVtcy9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7Ozs7QUFBQSxrREFBeUI7QUFHekIsaURBQStEO0FBRS9ELE1BQU0scUJBQXFCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxxQkFBcUIsQ0FBQTtBQUUvRCxNQUFNLG1CQUFtQixHQUFHLEdBQUcsRUFBRTtJQUMvQixJQUFJLENBQUMscUJBQXFCLEVBQUUsQ0FBQztRQUMzQixNQUFNLElBQUksS0FBSyxDQUFDLDBEQUEwRCxDQUFDLENBQUE7SUFDN0UsQ0FBQztBQUNILENBQUMsQ0FBQTtBQUVELE1BQU0sZUFBZSxHQUFHLG1DQUFtQyxDQUFBO0FBRTNELE1BQU0sT0FBTyxHQUFHLENBQUMsR0FBa0IsRUFBRSxHQUFtQixFQUFFLEVBQUU7SUFDMUQsTUFBTSxNQUFNLEdBQUcsR0FBRyxDQUFDLE9BQU8sQ0FBQyxNQUFNLENBQUE7SUFDakMsSUFBSSxNQUFNLEVBQUUsQ0FBQztRQUNYLEdBQUcsQ0FBQyxNQUFNLENBQUMsNkJBQTZCLEVBQUUsTUFBTSxDQUFDLENBQUE7UUFDakQsR0FBRyxDQUFDLE1BQU0sQ0FBQyxNQUFNLEVBQUUsUUFBUSxDQUFDLENBQUE7SUFDOUIsQ0FBQztTQUFNLENBQUM7UUFDTixHQUFHLENBQUMsTUFBTSxDQUFDLDZCQUE2QixFQUFFLEdBQUcsQ0FBQyxDQUFBO0lBQ2hELENBQUM7SUFFRCxHQUFHLENBQUMsTUFBTSxDQUNSLDhCQUE4QixFQUM5QixHQUFHLENBQUMsT0FBTyxDQUFDLGdDQUFnQyxDQUFDO1FBQzNDLDZCQUE2QixDQUNoQyxDQUFBO0lBQ0QsR0FBRyxDQUFDLE1BQU0sQ0FBQyw4QkFBOEIsRUFBRSxlQUFlLENBQUMsQ0FBQTtJQUMzRCxHQUFHLENBQUMsTUFBTSxDQUFDLGtDQUFr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

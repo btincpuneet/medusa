@@ -1,0 +1,173 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = GET;
+exports.PUT = PUT;
+exports.DELETE = DELETE;
+const pg_1 = require("../../../../../lib/pg");
+function parseBoolean(value, fallback) {
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (typeof value === "number") {
+        return value !== 0;
+    }
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (["true", "1", "yes", "on"].includes(normalized)) {
+            return true;
+        }
+        if (["false", "0", "no", "off"].includes(normalized)) {
+            return false;
+        }
+    }
+    return fallback;
+}
+function parseAuthType(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    const parsed = typeof value === "number"
+        ? value
+        : Number.parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+    if (parsed === 1 || parsed === 2) {
+        return parsed;
+    }
+    return null;
+}
+async function ensureDomainExists(domainId) {
+    const { rows } = await (0, pg_1.getPgPool)().query(`
+      SELECT id
+      FROM redington_domain
+      WHERE id = $1
+    `, [domainId]);
+    return rows[0] ? rows[0].id : null;
+}
+async function loadDomainAuthRecord(id) {
+    const { rows } = await (0, pg_1.getPgPool)().query(`
+      SELECT a.id,
+             a.domain_id,
+             a.auth_type,
+             a.email_otp,
+             a.mobile_otp,
+             a.created_at,
+             a.updated_at,
+             d.domain_name
+        FROM redington_domain_auth a
+        LEFT JOIN redington_domain d ON d.id = a.domain_id
+       WHERE a.id = $1
+    `, [id]);
+    return rows[0] ? (0, pg_1.mapDomainAuthRow)(rows[0]) : null;
+}
+async function GET(req, res) {
+    await (0, pg_1.ensureRedingtonDomainTable)();
+    await (0, pg_1.ensureRedingtonDomainAuthTable)();
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid authentication id" });
+    }
+    const record = await loadDomainAuthRecord(id);
+    if (!record) {
+        return res.status(404).json({ message: "Authentication settings not found" });
+    }
+    return res.json({ domain_auth_control: record });
+}
+async function PUT(req, res) {
+    await (0, pg_1.ensureRedingtonDomainTable)();
+    await (0, pg_1.ensureRedingtonDomainAuthTable)();
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid authentication id" });
+    }
+    const body = (req.body || {});
+    const updates = [];
+    const params = [];
+    if (body.domain_id !== undefined) {
+        const domainId = Number.parseInt(String(body.domain_id).trim(), 10);
+        if (!Number.isFinite(domainId)) {
+            return res.status(400).json({
+                message: "domain_id must be a valid number",
+            });
+        }
+        const domainExists = await ensureDomainExists(domainId);
+        if (!domainExists) {
+            return res.status(404).json({
+                message: `Domain with id ${domainId} not found`,
+            });
+        }
+        updates.push(`domain_id = $${updates.length + 1}`);
+        params.push(domainId);
+    }
+    if (body.auth_type !== undefined) {
+        const authType = parseAuthType(body.auth_type);
+        if (authType === null) {
+            return res.status(400).json({
+                message: "auth_type must be 1 (OTP-only) or 2 (Password + OTP)",
+            });
+        }
+        updates.push(`auth_type = $${updates.length + 1}`);
+        params.push(authType);
+    }
+    if (body.email_otp !== undefined) {
+        updates.push(`email_otp = $${updates.length + 1}`);
+        params.push(parseBoolean(body.email_otp, true));
+    }
+    if (body.mobile_otp !== undefined) {
+        updates.push(`mobile_otp = $${updates.length + 1}`);
+        params.push(parseBoolean(body.mobile_otp, true));
+    }
+    if (!updates.length) {
+        return res.status(400).json({
+            message: "No updatable fields provided",
+        });
+    }
+    params.push(id);
+    try {
+        const { rows } = await (0, pg_1.getPgPool)().query(`
+        UPDATE redington_domain_auth
+           SET ${updates.join(", ")}, updated_at = NOW()
+         WHERE id = $${params.length}
+         RETURNING id
+      `, params);
+        if (!rows[0]) {
+            return res.status(404).json({
+                message: "Authentication settings not found",
+            });
+        }
+        const record = await loadDomainAuthRecord(rows[0].id);
+        return res.json({
+            domain_auth_control: record,
+        });
+    }
+    catch (error) {
+        if (error?.code === "23505") {
+            return res.status(409).json({
+                message: "Authentication settings already exist for this domain.",
+            });
+        }
+        return res.status(500).json({
+            message: error instanceof Error
+                ? error.message
+                : "Unexpected error updating authentication settings",
+        });
+    }
+}
+async function DELETE(req, res) {
+    await (0, pg_1.ensureRedingtonDomainTable)();
+    await (0, pg_1.ensureRedingtonDomainAuthTable)();
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+        return res.status(400).json({ message: "Invalid authentication id" });
+    }
+    const { rowCount } = await (0, pg_1.getPgPool)().query(`
+      DELETE FROM redington_domain_auth
+      WHERE id = $1
+    `, [id]);
+    if (rowCount === 0) {
+        return res.status(404).json({ message: "Authentication settings not found" });
+    }
+    return res.status(204).send();
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9kb21haW4tYmFzZWQtYXV0aGVudGljYXRpb24vW2lkXS9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQXNGQSxrQkFlQztBQVNELGtCQWlHQztBQUVELHdCQXNCQztBQXJPRCw4Q0FLOEI7QUFFOUIsU0FBUyxZQUFZLENBQUMsS0FBYyxFQUFFLFFBQWlCO0lBQ3JELElBQUksT0FBTyxLQUFLLEtBQUssU0FBUyxFQUFFLENBQUM7UUFDL0IsT0FBTyxLQUFLLENBQUE7SUFDZCxDQUFDO0lBRUQsSUFBSSxPQUFPLEtBQUssS0FBSyxRQUFRLEVBQUUsQ0FBQztRQUM5QixPQUFPLEtBQUssS0FBSyxDQUFDLENBQUE7SUFDcEIsQ0FBQztJQUVELElBQUksT0FBTyxLQUFLLEtBQUssUUFBUSxFQUFFLENBQUM7UUFDOUIsTUFBTSxVQUFVLEdBQUcsS0FBSyxDQUFDLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRSxDQUFBO1FBQzdDLElBQUksQ0FBQyxNQUFNLEVBQUUsR0FBRyxFQUFFLEtBQUssRUFBRSxJQUFJLENBQUMsQ0FBQyxRQUFRLENBQUMsVUFBVSxDQUFDLEVBQUUsQ0FBQztZQUNwRCxPQUFPLElBQUksQ0FBQTtRQUNiLENBQUM7UUFDRCxJQUFJLENBQUMsT0FBTyxFQUFFLEdBQUcsRUFBRSxJQUFJLEVBQUUsS0FBSyxDQUFDLENBQUMsUUFBUSxDQUFDLFVBQVUsQ0FBQyxFQUFFLENBQUM7WUFDckQsT0FBTyxLQUFLLENBQUE7UUFDZCxDQUFDO0lBQ0gsQ0FBQztJQUVELE9BQU8sUUFBUSxDQUFBO0FBQ2pCLENBQUM7QUFFRCxTQUFTLGFBQWEsQ0FBQyxLQUFjO0lBQ25DLElBQUksS0FBSyxLQUFLLFNBQVMsSUFBSSxLQUFLLEtBQUssSUFBSSxFQUFFLENBQUM7UUFDMUMsT0FBTyxJQUFJLENBQUE7SUFDYixDQUFDO0lBRUQsTUFBTSxNQUFNLEdBQ1YsT0FBTyxLQUFLLEtBQUssUUFBUTtRQUN2QixDQUFDLENBQUMsS0FBSztRQUNQLENBQUMsQ0FBQyxNQUFNLENBQUMsUUFBUSxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUMsQ0FBQyxJQUFJLEVBQUUsRUFBRSxFQUFFLENBQUMsQ0FBQTtJQUUvQyxJQUFJLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsRUFBRSxDQUFDO1FBQzdCLE9BQU8sSUFBSSxDQUFBO0lBQ2IsQ0FBQztJQUVELElBQUksTUFBTSxLQUFLLENBQUMsSUFBSSxNQUFNLEtBQUssQ0FBQyxFQUFFLENBQUM7UUFDakMsT0FBTyxNQUFNLENBQUE7SUFDZixDQUFDO0lBRUQsT0FBTyxJQUFJLENBQUE7QUFDYixDQUFDO0FBRUQsS0FBSyxVQUFVLGtCQUFrQixDQUFDLFFBQWdCO0lBQ2hELE1BQU0sRUFBRSxJQUFJLEVBQUUsR0FBRyxNQUFNLElBQUEsY0FBUyxHQUFFLENBQUMsS0FBSyxDQUN0Qzs7OztLQUlDLEVBQ0QsQ0FBQyxRQUFRLENBQUMsQ0FDWCxDQUFBO0lBRUQsT0FBTyxJQUFJLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsQ0FBQyxDQUFDLElBQUksQ0FBQTtBQUNwQyxDQUFDO0FBRUQsS0FBSyxVQUFVLG9CQUFvQixDQUFDLEVBQVU7SUFDNUMsTUFBTSxFQUFFLElBQUksRUFBRSxHQUFHLE1BQU0sSUFBQSxjQUFTLEdBQUUsQ0FBQyxLQUFLLENBQ3RDOzs7Ozs7Ozs7Ozs7S0FZQyxFQUNELENBQUMsRUFBRSxDQUFDLENBQ0wsQ0FBQTtJQUVELE9BQU8sSUFBSSxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxJQUFBLHFCQUFnQixFQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxJQUFJLENBQUE7QUFDbkQsQ0FBQztBQUVNLEtBQUssVUFBVSxHQUFHLENBQUMsR0FBa0IsRUFBRSxHQUFtQjtJQUMvRCxNQUFNLElBQUEsK0JBQTBCLEdBQUUsQ0FBQTtJQUNsQyxNQUFNLElBQUEsbUNBQThCLEdBQUUsQ0FBQTtJQUV0QyxNQUFNLEVBQUUsR0FBRyxNQUFNLENBQUMsUUFBUSxDQUFDLEdBQUcsQ0FBQyxNQUFNLENBQUMsRUFBRSxFQUFFLEVBQUUsQ0FBQyxDQUFBO0lBQzdDLElBQUksQ0FBQyxNQUFNLENBQUMsUUFBUSxDQUFDLEVBQUUsQ0FBQyxFQUFFLENBQUM7UUFDekIsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSwyQkFBMkIsRUFBRSxDQUFDLENBQUE7SUFDdkUsQ0FBQztJQUVELE1BQU0sTUFBTSxHQUFHLE1BQU0sb0JBQW9CLENBQUMsRUFBRSxDQUFDLENBQUE7SUFDN0MsSUFBSSxDQUFDLE1BQU0sRUFBRSxDQUFDO1FBQ1osT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxtQ0FBbUMsRUFBRSxDQUFDLENBQUE7SUFDL0UsQ0FBQztJQUVELE9BQU8sR0FBRyxDQUFDLElBQUksQ0FBQyxFQUFFLG1CQUFtQixFQUFFLE1BQU0sRUFBRSxDQUFDLENBQUE7QUFDbEQsQ0FBQztBQVNNLEtBQUssVUFBVSxHQUFHLENBQUMsR0FBa0IsRUFBRSxHQUFtQjtJQUMvRCxNQUFNLElBQUEsK0JBQTBCLEdBQUUsQ0FBQTtJQUNsQyxNQUFNLElBQUEsbUNBQThCLEdBQUUsQ0FBQTtJQUV0QyxNQUFNLEVBQUUsR0FBRyxNQUFNLENBQUMsUUFBUSxDQUFDLEdBQUcsQ0FBQyxNQUFNLENBQUMsRUFBRSxFQUFFLEVBQUUsQ0FBQyxDQUFBO0lBQzdDLElBQUksQ0FBQyxNQUFNLENBQUMsUUFBUSxDQUFDLEVBQUUsQ0FBQyxFQUFFLENBQUM7UUFDekIsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSwyQkFBMkIsRUFBRSxDQUFDLENBQUE7SUFDdkUsQ0FBQztJQUVELE1BQU0sSUFBSSxHQUFHLENBQUMsR0FBRyxDQUFDLElBQUksSUFBSSxFQUFFLENBQXlCLENBQUE7SUFDckQsTUFBTSxPQUFPLEdBQWEsRUFBRSxDQUFBO0lBQzVCLE1BQU0sTUFBTSxHQUFVLEVBQUUsQ0FBQTtJQUV4QixJQUFJLElBQUksQ0FBQyxTQUFTLEtBQUssU0FBUyxFQUFFLENBQUM7UUFDakMsTUFBTSxRQUFRLEdBQUcsTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsSUFBSSxDQUFDLFNBQVMsQ0FBQyxDQUFDLElBQUksRUFBRSxFQUFFLEVBQUUsQ0FBQyxDQUFBO1FBQ25FLElBQUksQ0FBQyxNQUFNLENBQUMsUUFBUSxDQUFDLFFBQVEsQ0FBQyxFQUFFLENBQUM7WUFDL0IsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQztnQkFDMUIsT0FBTyxFQUFFLGtDQUFrQzthQUM1QyxDQUFDLENBQUE7UUFDSixDQUFDO1FBRUQsTUFBTSxZQUFZLEdBQUcsTUFBTSxrQkFBa0IsQ0FBQyxRQUFRLENBQUMsQ0FBQTtRQUN2RCxJQUFJLENBQUMsWUFBWSxFQUFFLENBQUM7WUFDbEIsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQztnQkFDMUIsT0FBTyxFQUFFLGtCQUFrQixRQUFRLFlBQVk7YUFDaEQsQ0FBQyxDQUFBO1FBQ0osQ0FBQztRQUVELE9BQU8sQ0FBQyxJQUFJLENBQUMsZ0JBQWdCLE9BQU8sQ0FBQyxNQUFNLEdBQUcsQ0FBQyxFQUFFLENBQUMsQ0FBQTtRQUNsRCxNQUFNLENBQUMsSUFBSSxDQUFDLFFBQVEsQ0FBQyxDQUFBO0lBQ3ZCLENBQUM7SUFFRCxJQUFJLElBQUksQ0FBQyxTQUFTLEtBQUssU0FBUyxFQUFFLENBQUM7UUFDakMsTUFBTSxRQUFRLEdBQUcsYUFBYSxDQUFDLElBQUksQ0FBQyxTQUFTLENBQUMsQ0FBQTtRQUM5QyxJQUFJLFFBQVEsS0FBSyxJQUFJLEVBQUUsQ0FBQztZQUN0QixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO2dCQUMxQixPQUFPLEVBQUUsc0RBQXNEO2FBQ2hFLENBQUMsQ0FBQTtRQUNKLENBQUM7UUFDRCxPQUFPLENBQUMsSUFBSSxDQUFDLGdCQUFnQixPQUFPLENBQUMsTUFBTSxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUE7UUFDbEQsTUFBTSxDQUFDLElBQUksQ0FBQyxRQUFRLENBQUMsQ0FBQTtJQUN2QixDQUFDO0lBRUQsSUFBSSxJQUFJLENBQUMsU0FBUyxLQUFLLFNBQVMsRUFBRSxDQUFDO1FBQ2pDLE9BQU8sQ0FBQyxJQUFJLENBQUMsZ0JBQWdCLE9BQU8sQ0FBQyxNQUFNLEdBQUcsQ0FBQyxFQUFFLENBQUMsQ0FBQTtRQUNsRCxNQUFNLENBQUMsSUFBSSxDQUFDLFlBQVksQ0FBQyxJQUFJLENBQUMsU0FBUyxFQUFFLElBQUksQ0FBQyxDQUFDLENBQUE7SUFDakQsQ0FBQztJQUVELElBQUksSUFBSSxDQUFDLFVBQVUsS0FBSyxTQUFTLEVBQUUsQ0FBQztRQUNsQyxPQUFPLENBQUMsSUFBSSxDQUFDLGlCQUFpQixPQUFPLENBQUMsTUFBTSxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUE7UUFDbkQsTUFBTSxDQUFDLElBQUksQ0FBQyxZQUFZLENBQUMsSUFBSSxDQUFDLFVBQVUsRUFBRSxJQUFJLENBQUMsQ0FBQyxDQUFBO0lBQ2xELENBQUM7SUFFRCxJQUFJLENBQUMsT0FBTyxDQUFDLE1BQU0sRUFBRSxDQUFDO1FBQ3BCLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUM7WUFDMUIsT0FBTyxFQUFFLDhCQUE4QjtTQUN4QyxDQUFDLENBQUE7SUFDSixDQUFDO0lBRUQsTUFBTSxDQUFDLElBQUksQ0FBQyxFQUFFLENBQUMsQ0FBQTtJQUVmLElBQUksQ0FBQztRQUNILE1BQU0sRUFBRSxJQUFJLEVBQUUsR0FBRyxNQUFNLElBQUEsY0FBUyxHQUFFLENBQUMsS0FBSyxDQUN0Qzs7aUJBRVcsT0FBTyxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUM7dUJBQ1osTUFBTSxDQUFDLE1BQU07O09BRTdCLEVBQ0QsTUFBTSxDQUNQLENBQUE7UUFFRCxJQUFJLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUM7WUFDYixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO2dCQUMxQixPQUFPLEVBQUUsbUNBQW1DO2FBQzdDLENBQUMsQ0FBQTtRQUNKLENBQUM7UUFFRCxNQUFNLE1BQU0sR0FBRyxNQUFNLG9CQUFvQixDQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsQ0FBQTtRQUVyRCxPQUFPLEdBQUcsQ0FBQyxJQUFJLENBQUM7WUFDZCxtQkFBbUIsRUFBRSxNQUFNO1NBQzVCLENBQUMsQ0FBQTtJQUNKLENBQUM7SUFBQyxPQUFPLEtBQVUsRUFBRSxDQUFDO1FBQ3BCLElBQUksS0FBSyxFQUFFLElBQUksS0FBSyxPQUFPLEVBQUUsQ0FBQztZQUM1QixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO2dCQUMxQixPQUFPLEVBQUUsd0RBQXdEO2FBQ2xFLENBQUMsQ0FBQTtRQUNKLENBQUM7UUFFRCxPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1lBQzFCLE9BQU8sRUFDTCxLQUFLLFlBQVksS0FBSztnQkFDcEIsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPO2dCQUNmLENBQUMsQ0FBQyxtREFBbUQ7U0FDMUQsQ0FBQyxDQUFBO0lBQ0osQ0FBQztBQUNILENBQUM7QUFFTSxLQUFLLFVBQVUsTUFBTSxDQUFDLEdBQWtCLEVBQUUsR0FBbUI7SUFDbEUsTUFBTSxJQUFBLCtCQUEwQixHQUFFLENBQUE7SUFDbEMsTUFBTSxJQUFBLG1DQUE4QixHQUFFLENBQUE7SUFFdEMsTUFBTSxFQUFFLEdBQUcsTUFBTSxDQUFDLFFBQVEsQ0FBQyxHQUFHLENBQUMsTUFBTSxDQUFDLEVBQUUsRUFBRSxFQUFFLENBQUMsQ0FBQTtJQUM3QyxJQUFJLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyxFQUFFLENBQUMsRUFBRSxDQUFDO1FBQ3pCLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUMsRUFBRSxPQUFPLEVBQUUsMkJBQTJCLEVBQUUsQ0FBQyxDQUFBO0lBQ3ZFLENBQUM7SUFFRCxNQUFNLEVBQUUsUUFBUSxFQUFFLEdBQUcsTUFBTSxJQUFBLGNBQVMsR0FBRSxDQUFDLEtBQUssQ0FDMUM7OztLQUdDLEVBQ0QsQ0FBQyxFQUFFLENBQUMsQ0FDTCxDQUFBO0lBRUQsSUFBSSxRQUFRLEtBQUssQ0FBQyxFQUFFLENBQUM7UUFDbkIsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxtQ0FBbUMsRUFBRSxDQUFDLENBQUE7SUFDL0UsQ0FBQztJQUVELE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLEVBQUUsQ0FBQTtBQUMvQixDQUFDIn0=

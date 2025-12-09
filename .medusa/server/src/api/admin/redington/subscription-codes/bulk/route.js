@@ -1,0 +1,45 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.POST = POST;
+const pg_1 = require("../../../../../lib/pg");
+const normalizeIds = (input) => {
+    const unique = new Set();
+    if (Array.isArray(input)) {
+        for (const value of input) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+                unique.add(parsed);
+            }
+        }
+    }
+    return Array.from(unique.values());
+};
+async function POST(req, res) {
+    await (0, pg_1.ensureRedingtonSubscriptionCodeTable)();
+    const body = (req.body || {});
+    const ids = normalizeIds(body.ids);
+    if (!ids.length) {
+        return res.status(400).json({ message: "ids array is required" });
+    }
+    const action = (body.action || "").toLowerCase();
+    if (!["enable", "disable", "delete"].includes(action)) {
+        return res.status(400).json({
+            message: "action must be one of enable, disable, or delete",
+        });
+    }
+    if (action === "delete") {
+        const result = await (0, pg_1.getPgPool)().query(`
+        DELETE FROM redington_subscription_code
+        WHERE id = ANY($1::int[])
+      `, [ids]);
+        return res.json({ deleted: result.rowCount || 0 });
+    }
+    const nextStatus = action === "enable";
+    const result = await (0, pg_1.getPgPool)().query(`
+      UPDATE redington_subscription_code
+      SET status = $1, updated_at = NOW()
+      WHERE id = ANY($2::int[])
+    `, [nextStatus, ids]);
+    return res.json({ updated: result.rowCount || 0, status: nextStatus });
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9zdWJzY3JpcHRpb24tY29kZXMvYnVsay9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQTJCQSxvQkEwQ0M7QUFuRUQsOENBRzhCO0FBTzlCLE1BQU0sWUFBWSxHQUFHLENBQUMsS0FBc0IsRUFBRSxFQUFFO0lBQzlDLE1BQU0sTUFBTSxHQUFHLElBQUksR0FBRyxFQUFVLENBQUE7SUFFaEMsSUFBSSxLQUFLLENBQUMsT0FBTyxDQUFDLEtBQUssQ0FBQyxFQUFFLENBQUM7UUFDekIsS0FBSyxNQUFNLEtBQUssSUFBSSxLQUFLLEVBQUUsQ0FBQztZQUMxQixNQUFNLE1BQU0sR0FBRyxNQUFNLENBQUMsS0FBSyxDQUFDLENBQUE7WUFDNUIsSUFBSSxNQUFNLENBQUMsUUFBUSxDQUFDLE1BQU0sQ0FBQyxFQUFFLENBQUM7Z0JBQzVCLE1BQU0sQ0FBQyxHQUFHLENBQUMsTUFBTSxDQUFDLENBQUE7WUFDcEIsQ0FBQztRQUNILENBQUM7SUFDSCxDQUFDO0lBRUQsT0FBTyxLQUFLLENBQUMsSUFBSSxDQUFDLE1BQU0sQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFBO0FBQ3BDLENBQUMsQ0FBQTtBQUVNLEtBQUssVUFBVSxJQUFJLENBQUMsR0FBa0IsRUFBRSxHQUFtQjtJQUNoRSxNQUFNLElBQUEseUNBQW9DLEdBQUUsQ0FBQTtJQUU1QyxNQUFNLElBQUksR0FBRyxDQUFDLEdBQUcsQ0FBQyxJQUFJLElBQUksRUFBRSxDQUFhLENBQUE7SUFDekMsTUFBTSxHQUFHLEdBQUcsWUFBWSxDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsQ0FBQTtJQUVsQyxJQUFJLENBQUMsR0FBRyxDQUFDLE1BQU0sRUFBRSxDQUFDO1FBQ2hCLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUMsRUFBRSxPQUFPLEVBQUUsdUJBQXVCLEVBQUUsQ0FBQyxDQUFBO0lBQ25FLENBQUM7SUFFRCxNQUFNLE1BQU0sR0FBRyxDQUFDLElBQUksQ0FBQyxNQUFNLElBQUksRUFBRSxDQUFDLENBQUMsV0FBVyxFQUFFLENBQUE7SUFFaEQsSUFBSSxDQUFDLENBQUMsUUFBUSxFQUFFLFNBQVMsRUFBRSxRQUFRLENBQUMsQ0FBQyxRQUFRLENBQUMsTUFBTSxDQUFDLEVBQUUsQ0FBQztRQUN0RCxPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1lBQzFCLE9BQU8sRUFBRSxrREFBa0Q7U0FDNUQsQ0FBQyxDQUFBO0lBQ0osQ0FBQztJQUVELElBQUksTUFBTSxLQUFLLFFBQVEsRUFBRSxDQUFDO1FBQ3hCLE1BQU0sTUFBTSxHQUFHLE1BQU0sSUFBQSxjQUFTLEdBQUUsQ0FBQyxLQUFLLENBQ3BDOzs7T0FHQyxFQUNELENBQUMsR0FBRyxDQUFDLENBQ04sQ0FBQTtRQUVELE9BQU8sR0FBRyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxNQUFNLENBQUMsUUFBUSxJQUFJLENBQUMsRUFBRSxDQUFDLENBQUE7SUFDcEQsQ0FBQztJQUVELE1BQU0sVUFBVSxHQUFHLE1BQU0sS0FBSyxRQUFRLENBQUE7SUFFdEMsTUFBTSxNQUFNLEdBQUcsTUFBTSxJQUFBLGNBQVMsR0FBRSxDQUFDLEtBQUssQ0FDcEM7Ozs7S0FJQyxFQUNELENBQUMsVUFBVSxFQUFFLEdBQUcsQ0FBQyxDQUNsQixDQUFBO0lBRUQsT0FBTyxHQUFHLENBQUMsSUFBSSxDQUFDLEVBQUUsT0FBTyxFQUFFLE1BQU0sQ0FBQyxRQUFRLElBQUksQ0FBQyxFQUFFLE1BQU0sRUFBRSxVQUFVLEVBQUUsQ0FBQyxDQUFBO0FBQ3hFLENBQUMifQ==

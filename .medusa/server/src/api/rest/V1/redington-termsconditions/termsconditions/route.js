@@ -1,0 +1,70 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.POST = exports.OPTIONS = void 0;
+const magentoClient_1 = require("../../../../magentoClient");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const MAGENTO_ADMIN_TOKEN = process.env.MAGENTO_ADMIN_TOKEN;
+const ensureMagentoConfig = () => {
+    if (!MAGENTO_REST_BASE_URL || !MAGENTO_ADMIN_TOKEN) {
+        throw new Error("MAGENTO_REST_BASE_URL and MAGENTO_ADMIN_TOKEN are required for terms & conditions.");
+    }
+};
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "POST,OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+const POST = async (req, res) => {
+    setCors(req, res);
+    try {
+        ensureMagentoConfig();
+    }
+    catch (error) {
+        return res.status(500).json({
+            message: error instanceof Error
+                ? error.message
+                : "Magento configuration missing.",
+        });
+    }
+    const client = (0, magentoClient_1.createMagentoB2CClient)({
+        baseUrl: MAGENTO_REST_BASE_URL,
+        axiosConfig: {
+            headers: {
+                Authorization: `Bearer ${MAGENTO_ADMIN_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+        },
+    });
+    try {
+        const response = await client.request({
+            url: "redington-termsconditions/termsconditions",
+            method: "POST",
+            params: req.query,
+            data: req.body,
+        });
+        return res.status(response.status).json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 502;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            "Failed to create terms & conditions.";
+        return res.status(status).json({ message });
+    }
+};
+exports.POST = POST;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvcmVkaW5ndG9uLXRlcm1zY29uZGl0aW9ucy90ZXJtc2NvbmRpdGlvbnMvcm91dGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBRUEsNkRBQWtFO0FBRWxFLE1BQU0scUJBQXFCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxxQkFBcUIsQ0FBQTtBQUMvRCxNQUFNLG1CQUFtQixHQUFHLE9BQU8sQ0FBQyxHQUFHLENBQUMsbUJBQW1CLENBQUE7QUFFM0QsTUFBTSxtQkFBbUIsR0FBRyxHQUFHLEVBQUU7SUFDL0IsSUFBSSxDQUFDLHFCQUFxQixJQUFJLENBQUMsbUJBQW1CLEVBQUUsQ0FBQztRQUNuRCxNQUFNLElBQUksS0FBSyxDQUNiLG9GQUFvRixDQUNyRixDQUFBO0lBQ0gsQ0FBQztBQUNILENBQUMsQ0FBQTtBQUVELE1BQU0sT0FBTyxHQUFHLENBQUMsR0FBa0IsRUFBRSxHQUFtQixFQUFFLEVBQUU7SUFDMUQsTUFBTSxNQUFNLEdBQUcsR0FBRyxDQUFDLE9BQU8sQ0FBQyxNQUFNLENBQUE7SUFDakMsSUFBSSxNQUFNLEVBQUUsQ0FBQztRQUNYLEdBQUcsQ0FBQyxNQUFNLENBQUMsNkJBQTZCLEVBQUUsTUFBTSxDQUFDLENBQUE7UUFDakQsR0FBRyxDQUFDLE1BQU0sQ0FBQyxNQUFNLEVBQUUsUUFBUSxDQUFDLENBQUE7SUFDOUIsQ0FBQztTQUFNLENBQUM7UUFDTixHQUFHLENBQUMsTUFBTSxDQUFDLDZCQUE2QixFQUFFLEdBQUcsQ0FBQyxDQUFBO0lBQ2hELENBQUM7SUFFRCxHQUFHLENBQUMsTUFBTSxDQUNSLDhCQUE4QixFQUM5QixHQUFHLENBQUMsT0FBTyxDQUFDLGdDQUFnQyxDQUFDO1FBQzNDLDZCQUE2QixDQUNoQyxDQUFBO0lBQ0QsR0FBRyxDQUFDLE1BQU0sQ0FBQyw4QkFBOEIsRUFBRSxjQUFjLENBQUMsQ0FBQTtJQUMxRCxHQUFHLENBQUMsTUFBTSxDQUFDLGtDQUFrQyxFQUFFLE1BQU0sQ0FBQyxDQUFBO0FBQ3hELENBQUMsQ0FBQTtBQUVNLE1BQU0sT0FBTyxHQUFHLEtBQUssRUFBRSxHQUFrQixFQUFFLEdBQW1CLEVBQUUsRUFBRTtJQUN2RSxPQUFPLENBQUMsR0FBRyxFQUFFLEdBQUcsQ0FBQyxDQUFBO0lBQ2pCLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxFQUFFLENBQUE7QUFDeEIsQ0FBQyxDQUFBO0FBSFksUUFBQSxPQUFPLFdBR25CO0FBRU0sTUFBTSxJQUFJLEdBQUcsS0FBSyxFQUFFLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQ3BFLE9BQU8sQ0FBQyxHQUFHLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFFakIsSUFBSSxDQUFDO1FBQ0gsbUJBQW1CLEVBQUUsQ0FBQTtJQUN2QixDQUFDO0lBQUMsT0FBTyxLQUFLLEVBQUUsQ0FBQztRQUNmLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUM7WUFDMUIsT0FBTyxFQUNMLEtBQUssWUFBWSxLQUFLO2dCQUNwQixDQUFDLENBQUMsS0FBSyxDQUFDLE9BQU87Z0JBQ2YsQ0FBQyxDQUFDLGdDQUFnQztTQUN2QyxDQUFDLENBQUE7SUFDSixDQUFDO0lBRUQsTUFBTSxNQUFNLEdBQUcsSUFBQSxzQ0FBc0IsRUFBQztRQUNwQyxPQUFPLEVBQUUscUJBQXNCO1FBQy9CLFdBQVcsRUFBRTtZQUNYLE9BQU8sRUFBRTtnQkFDUCxhQUFhLEVBQUUsVUFBVSxtQkFBbUIsRUFBRTtnQkFDOUMsY0FBYyxFQUFFLGtCQUFrQjthQUNuQztTQUNGO0tBQ0YsQ0FBQyxDQUFBO0lBRUYsSUFBSSxDQUFDO1FBQ0gsTUFBTSxRQUFRLEdBQUcsTUFBTSxNQUFNLENBQUMsT0FBTyxDQUFDO1lBQ3BDLEdBQUcsRUFBRSwyQ0FBMkM7WUFDaEQsTUFBTSxFQUFFLE1BQU07WUFDZCxNQUFNLEVBQUUsR0FBRyxDQUFDLEtBQUs7WUFDakIsSUFBSSxFQUFFLEdBQUcsQ0FBQyxJQUFJO1NBQ2YsQ0FBQyxDQUFBO1FBRUYsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsQ0FBQyxJQUFJLENBQUMsUUFBUSxDQUFDLElBQUksQ0FBQyxDQUFBO0lBQ3hELENBQUM7SUFBQyxPQUFPLEtBQVUsRUFBRSxDQUFDO1FBQ3BCLE1BQU0sTUFBTSxHQUFHLEtBQUssRUFBRSxRQUFRLEVBQUUsTUFBTSxJQUFJLEdBQUcsQ0FBQTtRQUM3QyxNQUFNLE9BQU8sR0FDWCxLQUFLLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRSxPQUFPO1lBQzlCLEtBQUssRUFBRSxPQUFPO1lBQ2Qsc0NBQXNDLENBQUE7UUFDeEMsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLE9BQU8sRUFBRSxDQUFDLENBQUE7SUFDN0MsQ0FBQztBQUNILENBQUMsQ0FBQTtBQXpDWSxRQUFBLElBQUksUUF5Q2hCIn0=

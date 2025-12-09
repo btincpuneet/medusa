@@ -1,0 +1,81 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = GET;
+const pg_1 = require("../../../../lib/pg");
+const normalize = (value) => (value ?? "").trim();
+const normalizeLower = (value) => normalize(value).toLowerCase();
+const clampLimit = (value, fallback) => {
+    if (!value) {
+        return fallback;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.min(Math.trunc(parsed), 200);
+};
+const clampOffset = (value) => {
+    if (!value) {
+        return 0;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return 0;
+    }
+    return Math.trunc(parsed);
+};
+async function GET(req, res) {
+    await (0, pg_1.ensureRedingtonOrderShipmentTable)();
+    const query = (req.query || {});
+    const conditions = [];
+    const params = [];
+    const orderIncrementId = normalize(query.order_increment_id);
+    if (orderIncrementId) {
+        conditions.push(`LOWER(order_increment_id) LIKE $${params.length + 1}`);
+        params.push(`%${orderIncrementId.toLowerCase()}%`);
+    }
+    const awbNumber = normalize(query.awb_number);
+    if (awbNumber) {
+        conditions.push(`LOWER(COALESCE(awb_number, '')) LIKE $${params.length + 1}`);
+        params.push(`%${awbNumber.toLowerCase()}%`);
+    }
+    const status = normalizeLower(query.status);
+    if (status && status !== "all") {
+        conditions.push(`LOWER(order_status) = $${params.length + 1}`);
+        params.push(status);
+    }
+    const limit = clampLimit(query.limit, 100);
+    const offset = clampOffset(query.offset);
+    const whereClause = conditions.length
+        ? `WHERE ${conditions.join(" AND ")}`
+        : "";
+    const { rows } = await (0, pg_1.getPgPool)().query(`
+      SELECT
+        id,
+        order_id,
+        order_increment_id,
+        order_status,
+        awb_number,
+        sap_order_numbers,
+        last_synced_at,
+        metadata,
+        created_at,
+        updated_at,
+        COUNT(*) OVER() AS total_count
+      FROM redington_order_shipment
+      ${whereClause}
+      ORDER BY updated_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `, [...params, limit, offset]);
+    const total = rows.length && rows[0].total_count !== undefined
+        ? Number(rows[0].total_count)
+        : 0;
+    return res.json({
+        order_shipments: rows.map(pg_1.mapOrderShipmentRow),
+        count: total,
+        limit,
+        offset,
+    });
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL2FkbWluL3JlZGluZ3Rvbi9vcmRlci1zaGlwbWVudHMvcm91dGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7QUEyQ0Esa0JBbUVDO0FBNUdELDJDQUkyQjtBQUkzQixNQUFNLFNBQVMsR0FBRyxDQUFDLEtBQXVCLEVBQUUsRUFBRSxDQUFDLENBQUMsS0FBSyxJQUFJLEVBQUUsQ0FBQyxDQUFDLElBQUksRUFBRSxDQUFBO0FBQ25FLE1BQU0sY0FBYyxHQUFHLENBQUMsS0FBdUIsRUFBRSxFQUFFLENBQUMsU0FBUyxDQUFDLEtBQUssQ0FBQyxDQUFDLFdBQVcsRUFBRSxDQUFBO0FBRWxGLE1BQU0sVUFBVSxHQUFHLENBQUMsS0FBdUIsRUFBRSxRQUFnQixFQUFFLEVBQUU7SUFDL0QsSUFBSSxDQUFDLEtBQUssRUFBRSxDQUFDO1FBQ1gsT0FBTyxRQUFRLENBQUE7SUFDakIsQ0FBQztJQUNELE1BQU0sTUFBTSxHQUFHLE1BQU0sQ0FBQyxLQUFLLENBQUMsQ0FBQTtJQUM1QixJQUFJLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsSUFBSSxNQUFNLElBQUksQ0FBQyxFQUFFLENBQUM7UUFDNUMsT0FBTyxRQUFRLENBQUE7SUFDakIsQ0FBQztJQUNELE9BQU8sSUFBSSxDQUFDLEdBQUcsQ0FBQyxJQUFJLENBQUMsS0FBSyxDQUFDLE1BQU0sQ0FBQyxFQUFFLEdBQUcsQ0FBQyxDQUFBO0FBQzFDLENBQUMsQ0FBQTtBQUVELE1BQU0sV0FBVyxHQUFHLENBQUMsS0FBdUIsRUFBRSxFQUFFO0lBQzlDLElBQUksQ0FBQyxLQUFLLEVBQUUsQ0FBQztRQUNYLE9BQU8sQ0FBQyxDQUFBO0lBQ1YsQ0FBQztJQUNELE1BQU0sTUFBTSxHQUFHLE1BQU0sQ0FBQyxLQUFLLENBQUMsQ0FBQTtJQUM1QixJQUFJLENBQUMsTUFBTSxDQUFDLFFB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

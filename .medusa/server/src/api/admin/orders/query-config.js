@@ -1,0 +1,115 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.listShippingOptionsQueryConfig = exports.listOrderItemsQueryConfig = exports.retrieveOrderChangesTransformQueryConfig = exports.listTransformQueryConfig = exports.retrieveTransformQueryConfig = exports.defaultAdminOrderItemsFields = exports.defaultAdminRetrieveOrderChangesFields = exports.defaultAdminRetrieveOrderFields = exports.defaultAdminOrderFields = void 0;
+exports.defaultAdminOrderFields = [
+    "id",
+    "display_id",
+    "status",
+    "version",
+    "summary",
+    "total",
+    "metadata",
+    "magento_order_id",
+    "created_at",
+    "updated_at",
+];
+exports.defaultAdminRetrieveOrderFields = [
+    ...exports.defaultAdminOrderFields,
+    "region_id",
+    "total",
+    "subtotal",
+    "tax_total",
+    "order_change",
+    "discount_total",
+    "discount_tax_total",
+    "original_total",
+    "original_subtotal",
+    "original_tax_total",
+    "item_total",
+    "item_subtotal",
+    "item_tax_total",
+    "original_item_total",
+    "original_item_subtotal",
+    "original_item_tax_total",
+    "shipping_total",
+    "shipping_subtotal",
+    "shipping_tax_total",
+    "original_shipping_tax_total",
+    "original_shipping_subtotal",
+    "original_shipping_total",
+    "credit_line_total",
+    "credit_line_subtotal",
+    "credit_line_tax_total",
+    "*items",
+    "*credit_lines",
+    "*items.tax_lines",
+    "*items.adjustments",
+    "*items.variant",
+    "*items.variant.product",
+    "*items.detail",
+    "*shipping_address",
+    "*billing_address",
+    "*shipping_methods",
+    "*shipping_methods.tax_lines",
+    "*shipping_methods.adjustments",
+    "*payment_collections",
+    "*payment_collections.payments",
+    "*payment_collections.payments.refunds",
+    "*payment_collections.payments.captures",
+];
+exports.defaultAdminRetrieveOrderChangesFields = [
+    "id",
+    "order_id",
+    "return_id",
+    "claim_id",
+    "exchange_id",
+    "version",
+    "change_type",
+    "*actions",
+    "description",
+    "status",
+    "internal_note",
+    "created_by",
+    "requested_by",
+    "requested_at",
+    "confirmed_by",
+    "confirmed_at",
+    "declined_by",
+    "declined_reason",
+    "metadata",
+    "declined_at",
+    "canceled_by",
+    "canceled_at",
+    "created_at",
+    "updated_at",
+];
+exports.defaultAdminOrderItemsFields = [
+    "id",
+    "order_id",
+    "item_id",
+    "version",
+    "*item",
+];
+exports.retrieveTransformQueryConfig = {
+    defaults: exports.defaultAdminRetrieveOrderFields,
+    isList: false,
+};
+exports.listTransformQueryConfig = {
+    defaults: exports.defaultAdminOrderFields,
+    defaultLimit: 20,
+    isList: true,
+};
+exports.retrieveOrderChangesTransformQueryConfig = {
+    defaults: exports.defaultAdminRetrieveOrderChangesFields,
+    isList: false,
+};
+exports.listOrderItemsQueryConfig = {
+    defaults: exports.defaultAdminOrderItemsFields,
+    defaultLimit: 100,
+    isList: true,
+};
+exports.listShippingOptionsQueryConfig = {
+    defaultLimit: 100,
+    isList: true,
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicXVlcnktY29uZmlnLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vLi4vLi4vc3JjL2FwaS9hZG1pbi9vcmRlcnMvcXVlcnktY29uZmlnLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7OztBQUFhLFFBQUEsdUJBQXVCLEdBQUc7SUFDckMsSUFBSTtJQUNKLFlBQVk7SUFDWixRQUFRO0lBQ1IsU0FBUztJQUNULFNBQVM7SUFDVCxPQUFPO0lBQ1AsVUFBVTtJQUNWLGtCQUFrQjtJQUNsQixZQUFZO0lBQ1osWUFBWTtDQUNiLENBQUE7QUFFWSxRQUFBLCtCQUErQixHQUFHO0lBQzdDLEdBQUcsK0JBQXVCO0lBQzFCLFdBQVc7SUFDWCxPQUFPO0lBQ1AsVUFBVTtJQUNWLFdBQVc7SUFDWCxjQUFjO0lBQ2QsZ0JBQWdCO0lBQ2hCLG9CQUFvQjtJQUNwQixnQkFBZ0I7SUFDaEIsbUJBQW1CO0lBQ25CLG9CQUFvQjtJQUNwQixZQUFZO0lBQ1osZUFBZTtJQUNmLGdCQUFnQjtJQUNoQixxQkFBcUI7SUFDckIsd0JBQXdCO0lBQ3hCLHlCQUF5QjtJQUN6QixnQkFBZ0I7SUFDaEIsbUJBQW1CO0lBQ25CLG9CQUFvQjtJQUNwQiw2QkFBNkI7SUFDN0IsNEJBQTRCO0lBQzVCLHlCQUF5QjtJQUN6QixtQkFBbUI7SUFDbkIsc0JBQXNCO0lBQ3RCLHVCQUF1QjtJQUN2QixRQUFRO0lBQ1IsZUFBZTtJQUNmLGtCQUFrQjtJQUNsQixvQkFBb0I7SUFDcEIsZ0JBQWdCO0lBQ2hCLHdCQUF3QjtJQUN4QixlQUFlO0lBQ2YsbUJBQW1CO0lBQ25CLGtCQUFrQjtJQUNsQixtQkFBbUI7SUFDbkIsNkJBQTZCO0lBQzdCLCtCQUErQjtJQUMvQixzQkFBc0I7SUFDdEIsK0JBQStCO0lBQy9CLHVDQUF1QztJQUN2Qyx3Q0FBd0M7Q0FDekMsQ0FBQTtBQUVZLFFBQUEsc0NBQXNDLEdBQUc7SUFDcEQsSUFBSTtJQUNKLFVBQVU7SUFDVixXQUFXO0lBQ1gsVUFBVTtJQUNWLGFBQWE7SUFDYixTQUFTO0lBQ1QsYUFBYTtJQUNiLFVBQVU7SUFDVixhQUFhO0lBQ2IsUUFBUTtJQUNSLGVBQWU7SUFDZixZQUFZO0lBQ1osY0FBYztJQUNkLGNBQWM7SUFDZCxjQUFjO0lBQ2QsY0FBYztJQUNkLGFBQWE7SUFDYixpQkFBaUI7SUFDakIsVUFBVTtJQUNWLGFBQWE7SUFDYixhQUFhO0lBQ2IsYUFBYTtJQUNiLFlBQVk7SUFDWixZQUFZO0NBQ2IsQ0FBQTtBQUVZLFFBQUEsNEJBQTRCLEdBQUc7SUFDMUMsSUFBSTtJQUNKLFVBQVU7SUFDVixTQUFTO0lBQ1QsU0FBUztJQUNULE9BQU87Q0FDUixDQUFBO0FBRVksUUFBQSw0QkFBNEIsR0FBRztJQUMxQyxRQUFRLEVBQUUsdUNBQStCO0lBQ3pDLE1BQU0sRUFBRSxLQUFLO0NBQ2QsQ0FBQTtBQUVZLFFBQUEsd0JBQXdCLEdBQUc7SUFDdEMsUUFBUSxFQUFFLCtCQUF1QjtJQUNqQyxZQUFZLEVBQUUsRUFBRTtJQUNoQixNQUFNLEVBQUUsSUFBSTtDQUNiLENBQUE7QUFFWSxRQUFBLHdDQUF3QyxHQUFHO0lBQ3RELFFBQVEsRUFBRSw4Q0FBc0M7SUFDaEQsTUFBTSxFQUFFLEtBQUs7Q0FDZCxDQUFBO0FBRVksUUFBQSx5QkFBeUIsR0FBRztJQUN2QyxRQUFRLEVBQUUsb0NBQTRCO0lBQ3RDLFlBQVksRUFBRSxHQUFHO0lBQ2pCLE1BQU0sRUFBRSxJQUFJO0NBQ2IsQ0FBQTtBQUVZLFFBQUEsOEJBQThCLEdBQUc7SUFDNUMsWUFBWSxFQUFFLEdBQUc7SUFDakIsTUFBTSxFQUFFLElBQUk7Q0FDYixDQUFBIn0=

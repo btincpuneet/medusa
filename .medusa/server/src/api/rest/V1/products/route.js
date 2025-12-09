@@ -1,0 +1,69 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = exports.OPTIONS = void 0;
+const magentoClient_1 = require("../../../../api/magentoClient");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const MAGENTO_ADMIN_TOKEN = process.env.MAGENTO_ADMIN_TOKEN;
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const ensureMagentoConfig = () => {
+    if (!MAGENTO_REST_BASE_URL || !MAGENTO_ADMIN_TOKEN) {
+        throw new Error("MAGENTO_REST_BASE_URL and MAGENTO_ADMIN_TOKEN are required to proxy Magento products.");
+    }
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+const GET = async (req, res) => {
+    setCors(req, res);
+    try {
+        ensureMagentoConfig();
+    }
+    catch (error) {
+        return res.status(500).json({
+            message: error instanceof Error
+                ? error.message
+                : "Magento configuration missing.",
+        });
+    }
+    const magentoClient = (0, magentoClient_1.createMagentoB2CClient)({
+        baseUrl: MAGENTO_REST_BASE_URL,
+        axiosConfig: {
+            headers: {
+                Authorization: `Bearer ${MAGENTO_ADMIN_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+        },
+    });
+    try {
+        const response = await magentoClient.request({
+            url: "products",
+            method: "GET",
+            params: req.query,
+        });
+        return res.json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 502;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            "Failed to load Magento products.";
+        return res.status(status).json({ message });
+    }
+};
+exports.GET = GET;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvcHJvZHVjdHMvcm91dGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBRUEsaUVBQXNFO0FBRXRFLE1BQU0scUJBQXFCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxxQkFBcUIsQ0FBQTtBQUMvRCxNQUFNLG1CQUFtQixHQUFHLE9BQU8sQ0FBQyxHQUFHLENBQUMsbUJBQW1CLENBQUE7QUFFM0QsTUFBTSxPQUFPLEdBQUcsQ0FBQyxHQUFrQixFQUFFLEdBQW1CLEVBQUUsRUFBRTtJQUMxRCxNQUFNLE1BQU0sR0FBRyxHQUFHLENBQUMsT0FBTyxDQUFDLE1BQU0sQ0FBQTtJQUNqQyxJQUFJLE1BQU0sRUFBRSxDQUFDO1FBQ1gsR0FBRyxDQUFDLE1BQU0sQ0FBQyw2QkFBNkIsRUFBRSxNQUFNLENBQUMsQ0FBQTtRQUNqRCxHQUFHLENBQUMsTUFBTSxDQUFDLE1BQU0sRUFBRSxRQUFRLENBQUMsQ0FBQTtJQUM5QixDQUFDO1NBQU0sQ0FBQztRQUNOLEdBQUcsQ0FBQyxNQUFNLENBQUMsNkJBQTZCLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFDaEQsQ0FBQztJQUVELEdBQUcsQ0FBQyxNQUFNLENBQ1IsOEJBQThCLEVBQzlCLEdBQUcsQ0FBQyxPQUFPLENBQUMsZ0NBQWdDLENBQUM7UUFDM0MsNkJBQTZCLENBQ2hDLENBQUE7SUFDRCxHQUFHLENBQUMsTUFBTSxDQUFDLDhCQUE4QixFQUFFLGFBQWEsQ0FBQyxDQUFBO0lBQ3pELEdBQUcsQ0FBQyxNQUFNLENBQUMsa0NBQWtDLEVBQUUsTUFBTSxDQUFDLENBQUE7QUFDeEQsQ0FBQyxDQUFBO0FBRUQsTUFBTSxtQkFBbUIsR0FBRyxHQUFHLEVBQUU7SUFDL0IsSUFBSSxDQUFDLHFCQUFxQixJQUFJLENBQUMsbUJBQW1CLEVBQUUsQ0FBQztRQUNuRCxNQUFNLElBQUksS0FBSyxDQUNiLHVGQUF1RixDQUN4RixDQUFBO0lBQ0gsQ0FBQztBQUNILENBQUMsQ0FBQTtBQUVNLE1BQU0sT0FBTyxHQUFHLEtBQUssRUFBRSxHQUFrQixFQUFFLEdBQW1CLEVBQUUsRUFBRTtJQUN2RSxPQUFPLENBQUMsR0FBRyxFQUFFLEdBQUcsQ0FBQyxDQUFBO0lBQ2pCLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxFQUFFLENBQUE7QUFDeEIsQ0FBQyxDQUFBO0FBSFksUUFBQSxPQUFPLFdBR25CO0FBRU0sTUFBTSxHQUFHLEdBQUcsS0FBSyxFQUFFLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQ25FLE9BQU8sQ0FBQyxHQUFHLEVBQUUsR0FBRyxDQUFDLENBQUE7SUFFakIsSUFBSSxDQUFDO1FBQ0gsbUJBQW1CLEVBQUUsQ0FBQTtJQUN2QixDQUFDO0lBQUMsT0FBTyxLQUFLLEVBQUUsQ0FBQztRQUNmLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUM7WUFDMUIsT0FBTyxFQUNMLEtBQUssWUFBWSxLQUFLO2dCQUNwQixDQUFDLENBQUMsS0FBSyxDQUFDLE9BQU87Z0JBQ2YsQ0FBQyxDQUFDLGdDQUFnQztTQUN2QyxDQUFDLENBQUE7SUFDSixDQUFDO0lBRUQsTUFBTSxhQUFhLEdBQUcsSUFBQSxzQ0FBc0IsRUFBQztRQUMzQyxPQUFPLEVBQUUscUJBQXNCO1FBQy9CLFdBQVcsRUFBRTtZQUNYLE9BQU8sRUFBRTtnQkFDUCxhQUFhLEVBQUUsVUFBVSxtQkFBbUIsRUFBRTtnQkFDOUMsY0FBYyxFQUFFLGtCQUFrQjthQUNuQztTQUNGO0tBQ0YsQ0FBQyxDQUFBO0lBRUYsSUFBSSxDQUFDO1FBQ0gsTUFBTSxRQUFRLEdBQUcsTUFBTSxhQUFhLENBQUMsT0FBTyxDQUFDO1lBQzNDLEdBQUcsRUFBRSxVQUFVO1lBQ2YsTUFBTSxFQUFFLEtBQUs7WUFDYixNQUFNLEVBQUUsR0FBRyxDQUFDLEtBQUs7U0FDbEIsQ0FBQyxDQUFBO1FBRUYsT0FBTyxHQUFHLENBQUMsSUFBSSxDQUFDLFFBQVEsQ0FBQyxJQUFJLENBQUMsQ0FBQTtJQUNoQyxDQUFDO0lBQUMsT0FBTyxLQUFVLEVBQUUsQ0FBQztRQUNwQixNQUFNLE1BQU0sR0FBRyxLQUFLLEVBQUUsUUFBUSxFQUFFLE1BQU0sSUFBSSxHQUFHLENBQUE7UUFDN0MsTUFBTSxPQUFPLEdBQ1gsS0FBSyxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsT0FBTztZQUM5QixLQUFLLEVBQUUsT0FBTztZQUNkLGtDQUFrQyxDQUFBO1FBRXBDLE9BQU8sR0FBRyxDQUFDLE1BQU0sQ0FBQyxNQUFNLENBQUMsQ0FBQyxJQUFJLENBQUMsRUFBRSxPQUFPLEVBQUUsQ0FBQyxDQUFBO0lBQzdDLENBQUM7QUFDSCxDQUFDLENBQUE7QUF6Q1ksUUFBQSxHQUFHLE9BeUNmIn0=

@@ -1,0 +1,7 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSellerServiceRepository = void 0;
+const seller_service_1 = require("../models/seller-service");
+const getSellerServiceRepository = (manager) => manager.getRepository(seller_service_1.SellerService);
+exports.getSellerServiceRepository = getSellerServiceRepository;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoic2VsbGVyLXNlcnZpY2UtcmVwb3NpdG9yeS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL3NyYy9yZXBvc2l0b3JpZXMvc2VsbGVyLXNlcnZpY2UtcmVwb3NpdG9yeS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFFQSw2REFBd0Q7QUFJakQsTUFBTSwwQkFBMEIsR0FBRyxDQUN4QyxPQUFzQixFQUNHLEVBQUUsQ0FBQyxPQUFPLENBQUMsYUFBYSxDQUFDLDhCQUFhLENBQUMsQ0FBQTtBQUZyRCxRQUFBLDBCQUEwQiw4QkFFMkIifQ==

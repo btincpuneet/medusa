@@ -1,0 +1,76 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GET = exports.OPTIONS = void 0;
+const pg_1 = require("../../../../../../lib/pg");
+const magentoClient_1 = require("../../../../../../api/magentoClient");
+const MAGENTO_REST_BASE_URL = process.env.MAGENTO_REST_BASE_URL;
+const setCors = (req, res) => {
+    const origin = req.headers.origin;
+    if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+        res.header("Vary", "Origin");
+    }
+    else {
+        res.header("Access-Control-Allow-Origin", "*");
+    }
+    res.header("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+};
+const OPTIONS = async (req, res) => {
+    setCors(req, res);
+    res.status(204).send();
+};
+exports.OPTIONS = OPTIONS;
+const formatRegion = (region) => ({
+    id: String(region.region_id),
+    code: region.code ?? String(region.region_id),
+    name: region.name ?? region.code ?? String(region.region_id),
+    country_id: region.country_id,
+});
+const formatCountry = (country) => ({
+    id: country.country_id,
+    two_letter_abbreviation: country.iso2_code ?? country.country_id,
+    three_letter_abbreviation: country.iso3_code ?? country.country_id,
+    full_name_locale: country.name ?? country.country_id,
+    full_name_english: country.name ?? country.country_id,
+    available_regions: country.regions.map(formatRegion),
+});
+const GET = async (req, res) => {
+    setCors(req, res);
+    const countryId = String(req.params?.countryId ?? req.params?.country_id ?? "");
+    if (!countryId.length) {
+        return res.status(400).json({
+            message: "Country id is required",
+        });
+    }
+    const country = await (0, pg_1.findDirectoryCountryWithRegions)(countryId);
+    if (country) {
+        return res.json(formatCountry(country));
+    }
+    if (!MAGENTO_REST_BASE_URL) {
+        return res.status(404).json({
+            message: `Country ${countryId} not found`,
+        });
+    }
+    try {
+        const client = (0, magentoClient_1.createMagentoB2CClient)({
+            baseUrl: MAGENTO_REST_BASE_URL,
+        });
+        const response = await client.request({
+            url: `directory/countries/${encodeURIComponent(countryId)}`,
+            method: "GET",
+        });
+        return res.status(response.status).json(response.data);
+    }
+    catch (error) {
+        const status = error?.response?.status ?? 404;
+        const message = error?.response?.data?.message ||
+            error?.message ||
+            `Country ${countryId} not found`;
+        return res.status(status).json({ message });
+    }
+};
+exports.GET = GET;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicm91dGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9zcmMvYXBpL3Jlc3QvVjEvZGlyZWN0b3J5L2NvdW50cmllcy9bY291bnRyeUlkXS9yb3V0ZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFFQSxpREFBMEU7QUFDMUUsdUVBQTRFO0FBRTVFLE1BQU0scUJBQXFCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxxQkFBcUIsQ0FBQTtBQUUvRCxNQUFNLE9BQU8sR0FBRyxDQUFDLEdBQWtCLEVBQUUsR0FBbUIsRUFBRSxFQUFFO0lBQzFELE1BQU0sTUFBTSxHQUFHLEdBQUcsQ0FBQyxPQUFPLENBQUMsTUFBTSxDQUFBO0lBQ2pDLElBQUksTUFBTSxFQUFFLENBQUM7UUFDWCxHQUFHLENBQUMsTUFBTSxDQUFDLDZCQUE2QixFQUFFLE1BQU0sQ0FBQyxDQUFBO1FBQ2pELEdBQUcsQ0FBQyxNQUFNLENBQUMsTUFBTSxFQUFFLFFBQVEsQ0FBQyxDQUFBO0lBQzlCLENBQUM7U0FBTSxDQUFDO1FBQ04sR0FBRyxDQUFDLE1BQU0sQ0FBQyw2QkFBNkIsRUFBRSxHQUFHLENBQUMsQ0FBQTtJQUNoRCxDQUFDO0lBRUQsR0FBRyxDQUFDLE1BQU0sQ0FDUiw4QkFBOEIsRUFDOUIsR0FBRyxDQUFDLE9BQU8sQ0FBQyxnQ0FBZ0MsQ0FBQztRQUMzQyw2QkFBNkIsQ0FDaEMsQ0FBQTtJQUNELEdBQUcsQ0FBQyxNQUFNLENBQUMsOEJBQThCLEVBQUUsYUFBYSxDQUFDLENBQUE7SUFDekQsR0FBRyxDQUFDLE1BQU0sQ0FBQyxrQ0FBa0MsRUFBRSxNQUFNLENBQUMsQ0FBQTtBQUN4RCxDQUFDLENBQUE7QUFFTSxNQUFNLE9BQU8sR0FBRyxLQUFLLEVBQUUsR0FBa0IsRUFBRSxHQUFtQixFQUFFLEVBQUU7SUFDdkUsT0FBTyxDQUFDLEdBQUcsRUFBRSxHQUFHLENBQUMsQ0FBQTtJQUNqQixHQUFHLENBQUMsTUFB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
